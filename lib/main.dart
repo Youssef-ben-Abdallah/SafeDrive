@@ -6,6 +6,7 @@ import 'providers/settings_provider.dart';
 import 'screens/about_screen.dart';
 import 'screens/detection_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/lens_detection_screen.dart';
 import 'screens/report_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/splash_screen.dart';
@@ -49,6 +50,17 @@ class SafeDriveApp extends StatelessWidget {
               SplashScreen.routeName: (_) => const SplashScreen(),
               HomeScreen.routeName: (_) => const HomeScreen(),
               DetectionScreen.routeName: (_) => const DetectionScreen(),
+              LensDetectionScreen.routeName: (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+
+                if (args is! LensDetectionScreenArguments) {
+                  throw ArgumentError(
+                    'LensDetectionScreen requires a LensDetectionScreenArguments instance.',
+                  );
+                }
+
+                return LensDetectionScreen(lensDirection: args.lensDirection);
+              },
               ReportScreen.routeName: (_) => const ReportScreen(),
               SettingsScreen.routeName: (_) => const SettingsScreen(),
               AboutScreen.routeName: (_) => const AboutScreen(),
