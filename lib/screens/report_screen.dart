@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../models/detection_event.dart';
+import '../providers/detection_provider.dart';
 import '../widgets/report_card.dart';
 
 class ReportScreen extends StatelessWidget {
@@ -10,28 +11,49 @@ class ReportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final events = <DetectionEvent>[
-      DetectionEvent(
-        timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
-        type: DetectionEventType.drowsiness,
-        confidence: 0.82,
-      ),
-      DetectionEvent(
-        timestamp: DateTime.now().subtract(const Duration(minutes: 12)),
-        type: DetectionEventType.distraction,
-        confidence: 0.76,
-      ),
-    ];
+    final reports = context.watch<DetectionProvider>().reports;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Reports'),
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemBuilder: (context, index) => ReportCard(event: events[index]),
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemCount: events.length,
+      body: reports.isEmpty
+          ? const _EmptyReportsState()
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemBuilder: (context, index) => ReportCard(report: reports[index]),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: reports.length,
+            ),
+    );
+  }
+}
+
+class _EmptyReportsState extends StatelessWidget {
+  const _EmptyReportsState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.insights, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'No trips recorded yet.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Start a monitoring session to generate your first driving safety report.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
