@@ -10,7 +10,8 @@ import 'screens/report_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const SafeDriveApp());
 }
 
