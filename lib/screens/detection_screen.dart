@@ -21,18 +21,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   bool _isPictureInPictureMode = false;
   bool _isFrontCameraPrimary = true;
 
-  static const List<String> _frontCameraHighlights = [
-    'Détection du visage et des yeux',
-    'Détection du bâillement (somnolence)',
-    '→ Indicateurs visuels : yeux fermés, fatigue',
-  ];
-
-  static const List<String> _rearCameraHighlights = [
-    'Détection d\'objets et de mouvement',
-    'Suivi des véhicules, piétons ou obstacles',
-    '→ Avertissements visuels en cas de danger',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -55,13 +43,40 @@ class _DetectionScreenState extends State<DetectionScreen> {
       CameraDescription? frontCamera;
       CameraDescription? rearCamera;
 
-      for (final camera in cameras) {
-        if (camera.lensDirection == CameraLensDirection.front && frontCamera == null) {
-          frontCamera = camera;
-        } else if (camera.lensDirection == CameraLensDirection.back && rearCamera == null) {
-          rearCamera = camera;
+      CameraDescription? selectCamera(
+        Iterable<CameraDescription> preferred,
+        Set<CameraDescription> used,
+      ) {
+        for (final camera in preferred) {
+          if (!used.contains(camera)) {
+            used.add(camera);
+            return camera;
+          }
         }
+
+        for (final camera in cameras) {
+          if (!used.contains(camera)) {
+            used.add(camera);
+            return camera;
+          }
+        }
+
+        return null;
       }
+
+      final usedCameras = <CameraDescription>{};
+
+      final frontPreferences = [
+        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.front),
+        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.external),
+      ];
+      final rearPreferences = [
+        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.back),
+        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.external),
+      ];
+
+      frontCamera = selectCamera(frontPreferences, usedCameras);
+      rearCamera = selectCamera(rearPreferences, usedCameras);
 
       if (frontCamera == null || rearCamera == null) {
         if (!mounted) {
@@ -324,53 +339,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 }
 
-class _SplitCameraLayout extends StatelessWidget {
-  const _SplitCameraLayout({
-    super.key,
-    required this.frontCameraController,
-    required this.rearCameraController,
-    required this.isInitializing,
-    required this.errorMessage,
-  });
-
-  final CameraController? frontCameraController;
-  final CameraController? rearCameraController;
-  final bool isInitializing;
-  final String? errorMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: _CameraSection(
-              title: 'FRONT CAMERA (Caméra avant)',
-              highlights: _DetectionScreenState._frontCameraHighlights,
-              controller: frontCameraController,
-              isInitializing: isInitializing,
-              errorMessage: errorMessage,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-            child: _CameraSection(
-              title: 'REAR CAMERA (Caméra arrière)',
-              highlights: _DetectionScreenState._rearCameraHighlights,
-              controller: rearCameraController,
-              isInitializing: isInitializing,
-              errorMessage: errorMessage,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _PictureInPictureLayout extends StatelessWidget {
   const _PictureInPictureLayout({
     super.key,
@@ -396,19 +364,14 @@ class _PictureInPictureLayout extends StatelessWidget {
     final secondaryController =
         isFrontCameraPrimary ? rearCameraController : frontCameraController;
 
-    final primaryTitle = isFrontCameraPrimary
-        ? 'FRONT CAMERA (Caméra avant)'
-        : 'REAR CAMERA (Caméra arrière)';
-    final secondaryTitle = isFrontCameraPrimary
-        ? 'REAR CAMERA (Caméra arrière)'
-        : 'FRONT CAMERA (Caméra avant)';
-
-    final primaryHighlights = isFrontCameraPrimary
-        ? _DetectionScreenState._frontCameraHighlights
-        : _DetectionScreenState._rearCameraHighlights;
-    final secondaryHighlights = isFrontCameraPrimary
-        ? _DetectionScreenState._rearCameraHighlights
-        : _DetectionScreenState._frontCameraHighlights;
+    final primaryLabel = _cameraLensLabel(
+      primaryController,
+      isFrontCameraPrimary ? 'Caméra avant' : 'Caméra arrière',
+    );
+    final secondaryLabel = _cameraLensLabel(
+      secondaryController,
+      isFrontCameraPrimary ? 'Caméra arrière' : 'Caméra avant',
+    );
 
     final overlayWidth = math.min(
       240.0,
@@ -420,28 +383,51 @@ class _PictureInPictureLayout extends StatelessWidget {
       child: Stack(
         children: [
           Positioned.fill(
-            child: _CameraSection(
-              title: primaryTitle,
-              highlights: primaryHighlights,
-              controller: primaryController,
-              isInitializing: isInitializing,
-              errorMessage: errorMessage,
+            child: Tooltip(
+              message: primaryLabel,
+              preferBelow: false,
+              child: _CameraSection(
+                controller: primaryController,
+                isInitializing: isInitializing,
+                errorMessage: errorMessage,
+              ),
             ),
           ),
           Align(
             alignment: Alignment.topRight,
             child: SizedBox(
               width: overlayWidth,
-              child: _CameraSection(
-                title: secondaryTitle,
-                highlights: secondaryHighlights,
-                controller: secondaryController,
-                isInitializing: isInitializing,
-                errorMessage: errorMessage,
-                showHighlights: false,
-                subtitle: 'Touchez pour inverser',
-                isCompact: true,
-                onTap: swapPrimaryCamera,
+              child: Tooltip(
+                message: secondaryLabel,
+                child: Stack(
+                  children: [
+                    _CameraSection(
+                      controller: secondaryController,
+                      isInitializing: isInitializing,
+                      errorMessage: errorMessage,
+                      isCompact: true,
+                      onTap: swapPrimaryCamera,
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.touch_app,
+                            size: 16,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -453,24 +439,16 @@ class _PictureInPictureLayout extends StatelessWidget {
 
 class _CameraSection extends StatelessWidget {
   const _CameraSection({
-    required this.title,
-    required this.highlights,
     required this.controller,
     required this.isInitializing,
     required this.errorMessage,
-    this.showHighlights = true,
-    this.subtitle,
     this.isCompact = false,
     this.onTap,
   });
 
-  final String title;
-  final List<String> highlights;
   final CameraController? controller;
   final bool isInitializing;
   final String? errorMessage;
-  final bool showHighlights;
-  final String? subtitle;
   final bool isCompact;
   final VoidCallback? onTap;
 
@@ -480,7 +458,6 @@ class _CameraSection extends StatelessWidget {
     final bool isCameraReady = controller?.value.isInitialized == true;
 
     final borderRadius = BorderRadius.circular(isCompact ? 14 : 18);
-    final paddingValue = isCompact ? 14.0 : 20.0;
 
     return GestureDetector(
       onTap: onTap,
@@ -503,83 +480,115 @@ class _CameraSection extends StatelessWidget {
                   isInitializing: isInitializing,
                   errorMessage: errorMessage,
                 ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.black.withOpacity(isCompact ? 0.6 : 0.55),
-                        Colors.transparent,
-                        Colors.black.withOpacity(isCompact ? 0.55 : 0.4),
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: paddingValue,
-                left: paddingValue,
-                right: paddingValue,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: (isCompact
-                              ? theme.textTheme.titleMedium
-                              : theme.textTheme.titleLarge)
-                          ?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                    if (showHighlights) ...[
-                      const SizedBox(height: 12),
-                      ...highlights.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '• ',
-                                style:
-                                    TextStyle(color: Colors.white, fontSize: 16),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  item,
-                                  style:
-                                      theme.textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+String _cameraLensLabel(CameraController? controller, String fallback) {
+  final lensDirection = controller?.description.lensDirection;
+
+  if (lensDirection == null) {
+    return fallback;
+  }
+
+  switch (lensDirection) {
+    case CameraLensDirection.front:
+      return 'Caméra avant';
+    case CameraLensDirection.back:
+      return 'Caméra arrière';
+    case CameraLensDirection.external:
+      return 'Caméra externe';
+    case CameraLensDirection.unknown:
+      return fallback;
+  }
+}
+
+class _CameraPanel extends StatelessWidget {
+  const _CameraPanel({
+    required this.fallbackLabel,
+    required this.controller,
+    required this.isInitializing,
+    required this.errorMessage,
+  });
+
+  final String fallbackLabel;
+  final CameraController? controller;
+  final bool isInitializing;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = _cameraLensLabel(controller, fallbackLabel);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: _CameraSection(
+            controller: controller,
+            isInitializing: isInitializing,
+            errorMessage: errorMessage,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SplitCameraLayout extends StatelessWidget {
+  const _SplitCameraLayout({
+    super.key,
+    required this.frontCameraController,
+    required this.rearCameraController,
+    required this.isInitializing,
+    required this.errorMessage,
+  });
+
+  final CameraController? frontCameraController;
+  final CameraController? rearCameraController;
+  final bool isInitializing;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: _CameraPanel(
+              fallbackLabel: 'Caméra avant',
+              controller: frontCameraController,
+              isInitializing: isInitializing,
+              errorMessage: errorMessage,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            child: _CameraPanel(
+              fallbackLabel: 'Caméra arrière',
+              controller: rearCameraController,
+              isInitializing: isInitializing,
+              errorMessage: errorMessage,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
