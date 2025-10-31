@@ -67,10 +67,15 @@ class _DetectionScreenState extends State<DetectionScreen> {
         enableAudio: false,
       );
 
-      await Future.wait([
-        frontController.initialize(),
-        rearController.initialize(),
-      ]);
+      await frontController.initialize();
+
+      // Initializing multiple camera controllers in parallel can cause
+      // permission dialogs to overlap which results in a
+      // `CameraPermissionsRequestOngoing` error on some Android devices.
+      // Request the second controller only after the first one has
+      // completed its initialization to ensure the plugin processes the
+      // permission flow sequentially.
+      await rearController.initialize();
 
       if (!mounted) {
         return;
@@ -83,6 +88,19 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
       frontController = null;
       rearController = null;
+    } on CameraException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (error.code == 'CameraPermissionsRequestOngoing') {
+          _errorMessage =
+              'Une demande d\'autorisation de la caméra est déjà en cours. Veuillez patienter quelques secondes puis réessayer.';
+        } else {
+          _errorMessage =
+              'Échec de l\'initialisation des caméras : ${error.description ?? error.code}';
+        }
+      });
     } catch (error) {
       if (!mounted) {
         return;
