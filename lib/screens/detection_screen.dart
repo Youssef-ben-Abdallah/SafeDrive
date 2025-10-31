@@ -13,6 +13,7 @@ class DetectionScreen extends StatefulWidget {
 class _DetectionScreenState extends State<DetectionScreen> {
   CameraController? _frontCameraController;
   CameraController? _rearCameraController;
+  ResolutionPreset? _activeResolutionPreset;
   bool _isInitializing = true;
   String? _errorMessage;
 
@@ -26,6 +27,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     setState(() {
       _isInitializing = true;
       _errorMessage = null;
+      _activeResolutionPreset = null;
     });
 
     CameraController? frontController;
@@ -56,26 +58,61 @@ class _DetectionScreenState extends State<DetectionScreen> {
         return;
       }
 
-      frontController = CameraController(
-        frontCamera,
+      final presetsToTry = <ResolutionPreset>[
         ResolutionPreset.high,
-        enableAudio: false,
-      );
-      rearController = CameraController(
-        rearCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-      );
+        ResolutionPreset.medium,
+        ResolutionPreset.low,
+      ];
 
-      await frontController.initialize();
+      ResolutionPreset? successfulPreset;
 
-      // Initializing multiple camera controllers in parallel can cause
-      // permission dialogs to overlap which results in a
-      // `CameraPermissionsRequestOngoing` error on some Android devices.
-      // Request the second controller only after the first one has
-      // completed its initialization to ensure the plugin processes the
-      // permission flow sequentially.
-      await rearController.initialize();
+      for (final preset in presetsToTry) {
+        frontController = CameraController(
+          frontCamera,
+          preset,
+          enableAudio: false,
+          imageFormatGroup: ImageFormatGroup.yuv420,
+        );
+        rearController = CameraController(
+          rearCamera,
+          preset,
+          enableAudio: false,
+          imageFormatGroup: ImageFormatGroup.yuv420,
+        );
+
+        try {
+          await frontController.initialize();
+
+          // Initializing multiple camera controllers in parallel can cause
+          // permission dialogs to overlap which results in a
+          // `CameraPermissionsRequestOngoing` error on some Android devices.
+          // Request the second controller only after the first one has
+          // completed its initialization to ensure the plugin processes the
+          // permission flow sequentially.
+          await rearController.initialize();
+          successfulPreset = preset;
+          break;
+        } on CameraException catch (error) {
+          final shouldRetry =
+              preset != presetsToTry.last && _shouldRetryWithLowerPreset(error);
+
+          await frontController.dispose();
+          await rearController.dispose();
+          frontController = null;
+          rearController = null;
+
+          if (!shouldRetry) {
+            rethrow;
+          }
+        }
+      }
+
+      if (successfulPreset == null || frontController == null || rearController == null) {
+        throw CameraException(
+          'SafeDriveMultiCameraInitializationFailed',
+          'Impossible d\'initialiser simultanément les caméras avant et arrière.',
+        );
+      }
 
       if (!mounted) {
         return;
@@ -84,6 +121,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
       setState(() {
         _frontCameraController = frontController;
         _rearCameraController = rearController;
+        _activeResolutionPreset = successfulPreset;
       });
 
       frontController = null;
@@ -141,7 +179,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
       statusLabel = 'Statut : 🟡 Initialisation des caméras…';
       statusColor = theme.colorScheme.tertiary;
     } else {
-      statusLabel = 'Statut : 🟢 Détection active';
+      final presetLabel = _activeResolutionPreset == null
+          ? ''
+          : ' – qualité ${_describeResolutionPreset(_activeResolutionPreset!)}';
+      statusLabel = 'Statut : 🟢 Détection active$presetLabel';
       statusColor = theme.colorScheme.primary;
     }
 
@@ -205,6 +246,42 @@ class _DetectionScreenState extends State<DetectionScreen> {
         ),
       ),
     );
+  }
+
+  String _describeResolutionPreset(ResolutionPreset preset) {
+    switch (preset) {
+      case ResolutionPreset.low:
+        return 'basse';
+      case ResolutionPreset.medium:
+        return 'moyenne';
+      case ResolutionPreset.high:
+        return 'haute';
+      case ResolutionPreset.veryHigh:
+        return 'très haute';
+      case ResolutionPreset.ultraHigh:
+        return 'ultra';
+      case ResolutionPreset.max:
+        return 'maximale';
+    }
+  }
+
+  bool _shouldRetryWithLowerPreset(CameraException error) {
+    final code = error.code.toLowerCase();
+    final description = (error.description ?? '').toLowerCase();
+
+    if (code.contains('maxcamerasinuse')) {
+      return true;
+    }
+
+    const retryPhrases = [
+      'max cameras in use',
+      'maximum number of cameras',
+      'multiple simultaneous cameras not supported',
+      'already in use',
+      'too many requests to open camera',
+    ];
+
+    return retryPhrases.any(description.contains);
   }
 }
 
