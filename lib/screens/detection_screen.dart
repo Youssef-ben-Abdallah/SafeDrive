@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
+import '../services/camera_permission_service.dart';
+
 class DetectionScreen extends StatefulWidget {
   const DetectionScreen({super.key});
 
@@ -13,6 +15,8 @@ class DetectionScreen extends StatefulWidget {
 }
 
 class _DetectionScreenState extends State<DetectionScreen> {
+  final CameraPermissionService _cameraPermissionService =
+      const CameraPermissionService();
   CameraController? _frontCameraController;
   CameraController? _rearCameraController;
   ResolutionPreset? _activeResolutionPreset;
@@ -20,6 +24,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
   String? _errorMessage;
   bool _isPictureInPictureMode = false;
   bool _isFrontCameraPrimary = true;
+  CameraPermissionStatus _frontPermissionStatus =
+      CameraPermissionStatus.unknown;
+  CameraPermissionStatus _rearPermissionStatus =
+      CameraPermissionStatus.unknown;
 
   @override
   void initState() {
@@ -38,6 +46,42 @@ class _DetectionScreenState extends State<DetectionScreen> {
     CameraController? rearController;
 
     try {
+      final frontPermission = await _cameraPermissionService
+          .requestPermissionForLens(CameraLensDirection.front);
+      final rearPermission = await _cameraPermissionService
+          .requestPermissionForLens(CameraLensDirection.back);
+
+      if (!mounted) {
+        return;
+      }
+
+      if (frontPermission != CameraPermissionStatus.granted ||
+          rearPermission != CameraPermissionStatus.granted) {
+        await _frontCameraController?.dispose();
+        await _rearCameraController?.dispose();
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _frontCameraController = null;
+          _rearCameraController = null;
+          _frontPermissionStatus = frontPermission;
+          _rearPermissionStatus = rearPermission;
+          _isInitializing = false;
+          _errorMessage =
+              _buildPermissionErrorMessage(frontPermission, rearPermission);
+        });
+        return;
+      }
+
+      setState(() {
+        _frontPermissionStatus = frontPermission;
+        _rearPermissionStatus = rearPermission;
+        _errorMessage = null;
+      });
+
       final cameras = await availableCameras();
 
       CameraDescription? frontCamera;
@@ -208,6 +252,58 @@ class _DetectionScreenState extends State<DetectionScreen> {
     });
   }
 
+  Future<void> _handlePermissionRequest(CameraLensDirection lensDirection) async {
+    final status =
+        await _cameraPermissionService.requestPermissionForLens(lensDirection);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      if (lensDirection == CameraLensDirection.front) {
+        _frontPermissionStatus = status;
+      } else {
+        _rearPermissionStatus = status;
+      }
+      _errorMessage =
+          _buildPermissionErrorMessage(_frontPermissionStatus, _rearPermissionStatus);
+    });
+
+    if (_frontPermissionStatus == CameraPermissionStatus.granted &&
+        _rearPermissionStatus == CameraPermissionStatus.granted) {
+      await _initializeCameras();
+    }
+  }
+
+  void _openCameraSettings() {
+    _cameraPermissionService.openSystemSettings();
+  }
+
+  String? _buildPermissionErrorMessage(
+    CameraPermissionStatus frontStatus,
+    CameraPermissionStatus rearStatus,
+  ) {
+    final missing = <String>[];
+
+    if (frontStatus != CameraPermissionStatus.granted) {
+      missing.add('avant');
+    }
+    if (rearStatus != CameraPermissionStatus.granted) {
+      missing.add('arrière');
+    }
+
+    if (missing.isEmpty) {
+      return null;
+    }
+
+    if (missing.length == 2) {
+      return 'Autorisez les caméras avant et arrière pour démarrer la détection.';
+    }
+
+    return 'Autorisez la caméra ${missing.first} pour démarrer la détection.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -266,16 +362,34 @@ class _DetectionScreenState extends State<DetectionScreen> {
                         isFrontCameraPrimary: _isFrontCameraPrimary,
                         frontCameraController: _frontCameraController,
                         rearCameraController: _rearCameraController,
+                        frontPermissionStatus: _frontPermissionStatus,
+                        rearPermissionStatus: _rearPermissionStatus,
                         isInitializing: _isInitializing,
                         errorMessage: _errorMessage,
                         swapPrimaryCamera: _swapPrimaryCamera,
+                        requestFrontPermission: () {
+                          _handlePermissionRequest(CameraLensDirection.front);
+                        },
+                        requestRearPermission: () {
+                          _handlePermissionRequest(CameraLensDirection.back);
+                        },
+                        openSettings: _openCameraSettings,
                       )
                     : _SplitCameraLayout(
                         key: const ValueKey('split-layout'),
                         frontCameraController: _frontCameraController,
                         rearCameraController: _rearCameraController,
+                        frontPermissionStatus: _frontPermissionStatus,
+                        rearPermissionStatus: _rearPermissionStatus,
                         isInitializing: _isInitializing,
                         errorMessage: _errorMessage,
+                        requestFrontPermission: () {
+                          _handlePermissionRequest(CameraLensDirection.front);
+                        },
+                        requestRearPermission: () {
+                          _handlePermissionRequest(CameraLensDirection.back);
+                        },
+                        openSettings: _openCameraSettings,
                       ),
               ),
             ),
@@ -345,17 +459,27 @@ class _PictureInPictureLayout extends StatelessWidget {
     required this.isFrontCameraPrimary,
     required this.frontCameraController,
     required this.rearCameraController,
+    required this.frontPermissionStatus,
+    required this.rearPermissionStatus,
     required this.isInitializing,
     required this.errorMessage,
     required this.swapPrimaryCamera,
+    required this.requestFrontPermission,
+    required this.requestRearPermission,
+    required this.openSettings,
   });
 
   final bool isFrontCameraPrimary;
   final CameraController? frontCameraController;
   final CameraController? rearCameraController;
+  final CameraPermissionStatus frontPermissionStatus;
+  final CameraPermissionStatus rearPermissionStatus;
   final bool isInitializing;
   final String? errorMessage;
   final VoidCallback swapPrimaryCamera;
+  final VoidCallback requestFrontPermission;
+  final VoidCallback requestRearPermission;
+  final VoidCallback openSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +496,18 @@ class _PictureInPictureLayout extends StatelessWidget {
       secondaryController,
       isFrontCameraPrimary ? 'Caméra arrière' : 'Caméra avant',
     );
+    final primaryPermissionStatus =
+        isFrontCameraPrimary ? frontPermissionStatus : rearPermissionStatus;
+    final secondaryPermissionStatus =
+        isFrontCameraPrimary ? rearPermissionStatus : frontPermissionStatus;
+    final requestPrimaryPermission =
+        isFrontCameraPrimary ? requestFrontPermission : requestRearPermission;
+    final requestSecondaryPermission =
+        isFrontCameraPrimary ? requestRearPermission : requestFrontPermission;
+    final primaryLensDirection =
+        isFrontCameraPrimary ? CameraLensDirection.front : CameraLensDirection.back;
+    final secondaryLensDirection =
+        isFrontCameraPrimary ? CameraLensDirection.back : CameraLensDirection.front;
 
     final overlayWidth = math.min(
       240.0,
@@ -390,6 +526,10 @@ class _PictureInPictureLayout extends StatelessWidget {
                 controller: primaryController,
                 isInitializing: isInitializing,
                 errorMessage: errorMessage,
+                lensDirection: primaryLensDirection,
+                permissionStatus: primaryPermissionStatus,
+                onRequestPermission: requestPrimaryPermission,
+                onOpenSettings: openSettings,
               ),
             ),
           ),
@@ -407,6 +547,10 @@ class _PictureInPictureLayout extends StatelessWidget {
                       errorMessage: errorMessage,
                       isCompact: true,
                       onTap: swapPrimaryCamera,
+                      lensDirection: secondaryLensDirection,
+                      permissionStatus: secondaryPermissionStatus,
+                      onRequestPermission: requestSecondaryPermission,
+                      onOpenSettings: openSettings,
                     ),
                     Positioned(
                       top: 8,
@@ -442,6 +586,10 @@ class _CameraSection extends StatelessWidget {
     required this.controller,
     required this.isInitializing,
     required this.errorMessage,
+    required this.lensDirection,
+    required this.permissionStatus,
+    required this.onRequestPermission,
+    required this.onOpenSettings,
     this.isCompact = false,
     this.onTap,
   });
@@ -449,6 +597,10 @@ class _CameraSection extends StatelessWidget {
   final CameraController? controller;
   final bool isInitializing;
   final String? errorMessage;
+  final CameraLensDirection lensDirection;
+  final CameraPermissionStatus permissionStatus;
+  final VoidCallback onRequestPermission;
+  final VoidCallback onOpenSettings;
   final bool isCompact;
   final VoidCallback? onTap;
 
@@ -479,6 +631,10 @@ class _CameraSection extends StatelessWidget {
                 _CameraPlaceholder(
                   isInitializing: isInitializing,
                   errorMessage: errorMessage,
+                  lensDirection: lensDirection,
+                  permissionStatus: permissionStatus,
+                  onRequestPermission: onRequestPermission,
+                  onOpenSettings: onOpenSettings,
                 ),
             ],
           ),
@@ -513,12 +669,20 @@ class _CameraPanel extends StatelessWidget {
     required this.controller,
     required this.isInitializing,
     required this.errorMessage,
+    required this.lensDirection,
+    required this.permissionStatus,
+    required this.onRequestPermission,
+    required this.onOpenSettings,
   });
 
   final String fallbackLabel;
   final CameraController? controller;
   final bool isInitializing;
   final String? errorMessage;
+  final CameraLensDirection lensDirection;
+  final CameraPermissionStatus permissionStatus;
+  final VoidCallback onRequestPermission;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -541,6 +705,10 @@ class _CameraPanel extends StatelessWidget {
             controller: controller,
             isInitializing: isInitializing,
             errorMessage: errorMessage,
+            lensDirection: lensDirection,
+            permissionStatus: permissionStatus,
+            onRequestPermission: onRequestPermission,
+            onOpenSettings: onOpenSettings,
           ),
         ),
       ],
@@ -553,14 +721,24 @@ class _SplitCameraLayout extends StatelessWidget {
     super.key,
     required this.frontCameraController,
     required this.rearCameraController,
+    required this.frontPermissionStatus,
+    required this.rearPermissionStatus,
     required this.isInitializing,
     required this.errorMessage,
+    required this.requestFrontPermission,
+    required this.requestRearPermission,
+    required this.openSettings,
   });
 
   final CameraController? frontCameraController;
   final CameraController? rearCameraController;
+  final CameraPermissionStatus frontPermissionStatus;
+  final CameraPermissionStatus rearPermissionStatus;
   final bool isInitializing;
   final String? errorMessage;
+  final VoidCallback requestFrontPermission;
+  final VoidCallback requestRearPermission;
+  final VoidCallback openSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -574,6 +752,10 @@ class _SplitCameraLayout extends StatelessWidget {
               controller: frontCameraController,
               isInitializing: isInitializing,
               errorMessage: errorMessage,
+              lensDirection: CameraLensDirection.front,
+              permissionStatus: frontPermissionStatus,
+              onRequestPermission: requestFrontPermission,
+              onOpenSettings: openSettings,
             ),
           ),
         ),
@@ -585,6 +767,10 @@ class _SplitCameraLayout extends StatelessWidget {
               controller: rearCameraController,
               isInitializing: isInitializing,
               errorMessage: errorMessage,
+              lensDirection: CameraLensDirection.back,
+              permissionStatus: rearPermissionStatus,
+              onRequestPermission: requestRearPermission,
+              onOpenSettings: openSettings,
             ),
           ),
         ),
@@ -597,17 +783,72 @@ class _CameraPlaceholder extends StatelessWidget {
   const _CameraPlaceholder({
     required this.isInitializing,
     required this.errorMessage,
+    required this.lensDirection,
+    required this.permissionStatus,
+    required this.onRequestPermission,
+    required this.onOpenSettings,
   });
 
   final bool isInitializing;
   final String? errorMessage;
+  final CameraLensDirection lensDirection;
+  final CameraPermissionStatus permissionStatus;
+  final VoidCallback onRequestPermission;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final lensName = () {
+      switch (lensDirection) {
+        case CameraLensDirection.front:
+          return 'caméra avant';
+        case CameraLensDirection.back:
+          return 'caméra arrière';
+        case CameraLensDirection.external:
+          return 'caméra externe';
+      }
+    }();
 
     final Widget message;
-    if (errorMessage != null) {
+    if (permissionStatus == CameraPermissionStatus.permanentlyDenied) {
+      message = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'L\'accès à la $lensName est désactivé. Activez-la depuis les paramètres système.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: onOpenSettings,
+            child: const Text('Ouvrir les paramètres'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: onRequestPermission,
+            child: const Text('Réessayer'),
+          ),
+        ],
+      );
+    } else if (permissionStatus == CameraPermissionStatus.denied) {
+      message = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'SafeDrive a besoin d\'accéder à la $lensName pour démarrer la détection.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: onRequestPermission,
+            child: const Text('Autoriser la caméra'),
+          ),
+        ],
+      );
+    } else if (errorMessage != null) {
       message = Text(
         errorMessage!,
         style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
