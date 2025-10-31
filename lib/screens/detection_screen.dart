@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
@@ -17,176 +15,55 @@ class DetectionScreen extends StatefulWidget {
 class _DetectionScreenState extends State<DetectionScreen> {
   final CameraPermissionService _cameraPermissionService =
       const CameraPermissionService();
-  CameraController? _frontCameraController;
-  CameraController? _rearCameraController;
-  ResolutionPreset? _activeResolutionPreset;
-  bool _isInitializing = true;
-  String? _errorMessage;
-  bool _isPictureInPictureMode = false;
-  bool _isFrontCameraPrimary = true;
+
+  CameraController? _cameraController;
+  CameraDescription? _frontCamera;
+  CameraDescription? _rearCamera;
+  CameraLensDirection? _activeLens;
+  CameraLensDirection? _pendingLens;
   CameraPermissionStatus _frontPermissionStatus =
       CameraPermissionStatus.unknown;
   CameraPermissionStatus _rearPermissionStatus =
       CameraPermissionStatus.unknown;
+  bool _isLoadingAvailableCameras = true;
+  bool _isCameraInitializing = false;
+
+  final Map<CameraLensDirection, String?> _lensErrors = {
+    CameraLensDirection.front: null,
+    CameraLensDirection.back: null,
+  };
 
   @override
   void initState() {
     super.initState();
-    _initializeCameras();
+    _loadAvailableCameras();
   }
 
-  Future<void> _initializeCameras() async {
+  Future<void> _loadAvailableCameras() async {
     setState(() {
-      _isInitializing = true;
-      _errorMessage = null;
-      _activeResolutionPreset = null;
+      _isLoadingAvailableCameras = true;
+      _lensErrors[CameraLensDirection.front] = null;
+      _lensErrors[CameraLensDirection.back] = null;
     });
 
-    CameraController? frontController;
-    CameraController? rearController;
-
     try {
-      final frontPermission = await _cameraPermissionService
-          .requestPermissionForLens(CameraLensDirection.front);
-      final rearPermission = await _cameraPermissionService
-          .requestPermissionForLens(CameraLensDirection.back);
-
-      if (!mounted) {
-        return;
-      }
-
-      if (frontPermission != CameraPermissionStatus.granted ||
-          rearPermission != CameraPermissionStatus.granted) {
-        await _frontCameraController?.dispose();
-        await _rearCameraController?.dispose();
-
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          _frontCameraController = null;
-          _rearCameraController = null;
-          _frontPermissionStatus = frontPermission;
-          _rearPermissionStatus = rearPermission;
-          _isInitializing = false;
-          _errorMessage =
-              _buildPermissionErrorMessage(frontPermission, rearPermission);
-        });
-        return;
-      }
-
-      setState(() {
-        _frontPermissionStatus = frontPermission;
-        _rearPermissionStatus = rearPermission;
-        _errorMessage = null;
-      });
-
       final cameras = await availableCameras();
 
-      CameraDescription? frontCamera;
-      CameraDescription? rearCamera;
+      CameraDescription? front;
+      CameraDescription? back;
 
-      CameraDescription? selectCamera(
-        Iterable<CameraDescription> preferred,
-        Set<CameraDescription> used,
-      ) {
-        for (final camera in preferred) {
-          if (!used.contains(camera)) {
-            used.add(camera);
-            return camera;
-          }
+      for (final camera in cameras) {
+        switch (camera.lensDirection) {
+          case CameraLensDirection.front:
+            front ??= camera;
+            break;
+          case CameraLensDirection.back:
+            back ??= camera;
+            break;
+          case CameraLensDirection.external:
+            // Ignore external cameras for now.
+            break;
         }
-
-        for (final camera in cameras) {
-          if (!used.contains(camera)) {
-            used.add(camera);
-            return camera;
-          }
-        }
-
-        return null;
-      }
-
-      final usedCameras = <CameraDescription>{};
-
-      final frontPreferences = [
-        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.front),
-        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.external),
-      ];
-      final rearPreferences = [
-        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.back),
-        ...cameras.where((camera) => camera.lensDirection == CameraLensDirection.external),
-      ];
-
-      frontCamera = selectCamera(frontPreferences, usedCameras);
-      rearCamera = selectCamera(rearPreferences, usedCameras);
-
-      if (frontCamera == null || rearCamera == null) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _errorMessage =
-              'Impossible d\'initialiser les caméras avant et arrière simultanément sur cet appareil.';
-        });
-        return;
-      }
-
-      final presetsToTry = <ResolutionPreset>[
-        ResolutionPreset.high,
-        ResolutionPreset.medium,
-        ResolutionPreset.low,
-      ];
-
-      ResolutionPreset? successfulPreset;
-
-      for (final preset in presetsToTry) {
-        frontController = CameraController(
-          frontCamera,
-          preset,
-          enableAudio: false,
-          imageFormatGroup: ImageFormatGroup.yuv420,
-        );
-        rearController = CameraController(
-          rearCamera,
-          preset,
-          enableAudio: false,
-          imageFormatGroup: ImageFormatGroup.yuv420,
-        );
-
-        try {
-          await frontController.initialize();
-
-          // Initializing multiple camera controllers in parallel can cause
-          // permission dialogs to overlap which results in a
-          // `CameraPermissionsRequestOngoing` error on some Android devices.
-          // Request the second controller only after the first one has
-          // completed its initialization to ensure the plugin processes the
-          // permission flow sequentially.
-          await rearController.initialize();
-          successfulPreset = preset;
-          break;
-        } on CameraException catch (error) {
-          final shouldRetry =
-              preset != presetsToTry.last && _shouldRetryWithLowerPreset(error);
-
-          await frontController.dispose();
-          await rearController.dispose();
-          frontController = null;
-          rearController = null;
-
-          if (!shouldRetry) {
-            rethrow;
-          }
-        }
-      }
-
-      if (successfulPreset == null || frontController == null || rearController == null) {
-        throw CameraException(
-          'SafeDriveMultiCameraInitializationFailed',
-          'Impossible d\'initialiser simultanément les caméras avant et arrière.',
-        );
       }
 
       if (!mounted) {
@@ -194,203 +71,317 @@ class _DetectionScreenState extends State<DetectionScreen> {
       }
 
       setState(() {
-        _frontCameraController = frontController;
-        _rearCameraController = rearController;
-        _activeResolutionPreset = successfulPreset;
+        _frontCamera = front;
+        _rearCamera = back;
+        _lensErrors[CameraLensDirection.front] = front == null
+            ? 'Aucune caméra avant détectée sur cet appareil.'
+            : null;
+        _lensErrors[CameraLensDirection.back] = back == null
+            ? 'Aucune caméra arrière détectée sur cet appareil.'
+            : null;
       });
-
-      frontController = null;
-      rearController = null;
     } on CameraException catch (error) {
       if (!mounted) {
         return;
       }
+      final message =
+          'Impossible de récupérer la liste des caméras : ${error.description ?? error.code}';
       setState(() {
-        if (error.code == 'CameraPermissionsRequestOngoing') {
-          _errorMessage =
-              'Une demande d\'autorisation de la caméra est déjà en cours. Veuillez patienter quelques secondes puis réessayer.';
-        } else {
-          _errorMessage =
-              'Échec de l\'initialisation des caméras : ${error.description ?? error.code}';
-        }
+        _lensErrors[CameraLensDirection.front] = message;
+        _lensErrors[CameraLensDirection.back] = message;
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
+      final message =
+          'Impossible de récupérer la liste des caméras : $error';
       setState(() {
-        _errorMessage = 'Échec de l\'initialisation des caméras : $error';
+        _lensErrors[CameraLensDirection.front] = message;
+        _lensErrors[CameraLensDirection.back] = message;
       });
     } finally {
       if (mounted) {
         setState(() {
-          _isInitializing = false;
+          _isLoadingAvailableCameras = false;
         });
       }
-
-      await frontController?.dispose();
-      await rearController?.dispose();
     }
   }
 
-  @override
-  void dispose() {
-    _frontCameraController?.dispose();
-    _rearCameraController?.dispose();
-    super.dispose();
-  }
+  Future<void> _startCamera(CameraLensDirection lens) async {
+    final description = lens == CameraLensDirection.front
+        ? _frontCamera
+        : _rearCamera;
 
-  void _togglePictureInPictureMode() {
-    setState(() {
-      _isPictureInPictureMode = !_isPictureInPictureMode;
-    });
-  }
+    if (description == null) {
+      setState(() {
+        _lensErrors[lens] =
+            'Aucune caméra ${_lensDisplayName(lens)} n\'a été détectée sur cet appareil.';
+      });
+      return;
+    }
 
-  void _swapPrimaryCamera() {
-    setState(() {
-      _isFrontCameraPrimary = !_isFrontCameraPrimary;
-    });
-  }
-
-  Future<void> _handlePermissionRequest(CameraLensDirection lensDirection) async {
-    final status =
-        await _cameraPermissionService.requestPermissionForLens(lensDirection);
+    final permission =
+        await _cameraPermissionService.requestPermissionForLens(lens);
 
     if (!mounted) {
       return;
     }
 
     setState(() {
-      if (lensDirection == CameraLensDirection.front) {
-        _frontPermissionStatus = status;
-      } else {
-        _rearPermissionStatus = status;
-      }
-      _errorMessage =
-          _buildPermissionErrorMessage(_frontPermissionStatus, _rearPermissionStatus);
+      _setPermissionStatus(lens, permission);
     });
 
-    if (_frontPermissionStatus == CameraPermissionStatus.granted &&
-        _rearPermissionStatus == CameraPermissionStatus.granted) {
-      await _initializeCameras();
+    if (permission != CameraPermissionStatus.granted) {
+      setState(() {
+        _pendingLens = null;
+        _lensErrors[lens] = _buildPermissionErrorMessage(lens, permission);
+      });
+      return;
     }
+
+    await _stopCamera();
+
+    setState(() {
+      _pendingLens = lens;
+      _isCameraInitializing = true;
+      _lensErrors[lens] = null;
+    });
+
+    final controller = CameraController(
+      description,
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
+
+    try {
+      await controller.initialize();
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _cameraController = controller;
+        _activeLens = lens;
+        _pendingLens = null;
+      });
+    } on CameraException catch (error) {
+      await controller.dispose();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lensErrors[lens] =
+            'Impossible d\'initialiser la caméra ${_lensDisplayName(lens)} : ${error.description ?? error.code}';
+        _activeLens = null;
+        _pendingLens = null;
+      });
+    } catch (error) {
+      await controller.dispose();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lensErrors[lens] =
+            'Impossible d\'initialiser la caméra ${_lensDisplayName(lens)} : $error';
+        _activeLens = null;
+        _pendingLens = null;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCameraInitializing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _stopCamera() async {
+    final controller = _cameraController;
+    if (controller != null) {
+      setState(() {
+        _cameraController = null;
+        _activeLens = null;
+        _pendingLens = null;
+      });
+      await controller.dispose();
+    }
+  }
+
+  Future<void> _requestPermission(CameraLensDirection lens) async {
+    final status =
+        await _cameraPermissionService.requestPermissionForLens(lens);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _setPermissionStatus(lens, status);
+      if (status == CameraPermissionStatus.granted) {
+        _lensErrors[lens] = null;
+      } else {
+        _lensErrors[lens] = _buildPermissionErrorMessage(lens, status);
+      }
+    });
   }
 
   void _openCameraSettings() {
     _cameraPermissionService.openSystemSettings();
   }
 
-  String? _buildPermissionErrorMessage(
-    CameraPermissionStatus frontStatus,
-    CameraPermissionStatus rearStatus,
+  void _setPermissionStatus(
+    CameraLensDirection lens,
+    CameraPermissionStatus status,
   ) {
-    final missing = <String>[];
-
-    if (frontStatus != CameraPermissionStatus.granted) {
-      missing.add('avant');
+    if (lens == CameraLensDirection.front) {
+      _frontPermissionStatus = status;
+    } else {
+      _rearPermissionStatus = status;
     }
-    if (rearStatus != CameraPermissionStatus.granted) {
-      missing.add('arrière');
-    }
+  }
 
-    if (missing.isEmpty) {
-      return null;
+  String _lensDisplayName(CameraLensDirection lens) {
+    switch (lens) {
+      case CameraLensDirection.front:
+        return 'avant';
+      case CameraLensDirection.back:
+        return 'arrière';
+      case CameraLensDirection.external:
+        return 'externe';
     }
+  }
 
-    if (missing.length == 2) {
-      return 'Autorisez les caméras avant et arrière pour démarrer la détection.';
+  String? _buildPermissionErrorMessage(
+    CameraLensDirection lens,
+    CameraPermissionStatus status,
+  ) {
+    final lensName = _lensDisplayName(lens);
+
+    switch (status) {
+      case CameraPermissionStatus.granted:
+        return null;
+      case CameraPermissionStatus.denied:
+        return 'Autorisez la caméra $lensName pour démarrer la détection.';
+      case CameraPermissionStatus.permanentlyDenied:
+        return 'L\'accès à la caméra $lensName est bloqué. Activez-le depuis les paramètres système.';
+      case CameraPermissionStatus.unknown:
+        return null;
     }
+  }
 
-    return 'Autorisez la caméra ${missing.first} pour démarrer la détection.';
+  @override
+  void dispose() {
+    _cameraController?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isCameraReady = _cameraController?.value.isInitialized == true;
+    final activeError =
+        _activeLens == null ? null : _lensErrors[_activeLens!];
+    final fallbackError = activeError ??
+        _lensErrors[CameraLensDirection.front] ??
+        _lensErrors[CameraLensDirection.back];
 
     final String statusLabel;
     final Color statusColor;
 
-    if (_errorMessage != null) {
-      statusLabel = 'Statut : 🔴 ${_errorMessage!}';
-      statusColor = theme.colorScheme.error;
-    } else if (_isInitializing) {
-      statusLabel = 'Statut : 🟡 Initialisation des caméras…';
+    if (_isLoadingAvailableCameras) {
+      statusLabel =
+          'Statut : 🟡 Recherche des caméras disponibles…';
       statusColor = theme.colorScheme.tertiary;
-    } else {
-      final presetLabel = _activeResolutionPreset == null
-          ? ''
-          : ' – qualité ${_describeResolutionPreset(_activeResolutionPreset!)}';
-      statusLabel = 'Statut : 🟢 Détection active$presetLabel';
+    } else if (_isCameraInitializing) {
+      final lensName =
+          _pendingLens == null ? 'en cours' : _lensDisplayName(_pendingLens!);
+      statusLabel =
+          'Statut : 🟡 Initialisation de la caméra $lensName…';
+      statusColor = theme.colorScheme.tertiary;
+    } else if (_activeLens != null && isCameraReady) {
+      statusLabel =
+          'Statut : 🟢 Caméra ${_lensDisplayName(_activeLens!)} active';
       statusColor = theme.colorScheme.primary;
+    } else if (fallbackError != null && fallbackError.isNotEmpty) {
+      statusLabel = 'Statut : 🔴 $fallbackError';
+      statusColor = theme.colorScheme.error;
+    } else {
+      statusLabel = 'Statut : ⚪ Aucune caméra active';
+      statusColor = theme.colorScheme.onSurfaceVariant;
     }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('SafeDrive AI'),
-        actions: [
-          IconButton(
-            onPressed: _togglePictureInPictureMode,
-            tooltip: _isPictureInPictureMode
-                ? 'Afficher les caméras en mosaïque'
-                : 'Afficher en mode image dans l\'image',
-            icon: Icon(
-              _isPictureInPictureMode
-                  ? Icons.grid_view_rounded
-                  : Icons.picture_in_picture_alt_rounded,
-            ),
-          ),
-          if (_isPictureInPictureMode)
-            IconButton(
-              onPressed: _swapPrimaryCamera,
-              tooltip: 'Inverser les caméras',
-              icon: const Icon(Icons.swap_horiz_rounded),
-            ),
-        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: _isPictureInPictureMode
-                    ? _PictureInPictureLayout(
-                        key: const ValueKey('pip-layout'),
-                        isFrontCameraPrimary: _isFrontCameraPrimary,
-                        frontCameraController: _frontCameraController,
-                        rearCameraController: _rearCameraController,
-                        frontPermissionStatus: _frontPermissionStatus,
-                        rearPermissionStatus: _rearPermissionStatus,
-                        isInitializing: _isInitializing,
-                        errorMessage: _errorMessage,
-                        swapPrimaryCamera: _swapPrimaryCamera,
-                        requestFrontPermission: () {
-                          _handlePermissionRequest(CameraLensDirection.front);
-                        },
-                        requestRearPermission: () {
-                          _handlePermissionRequest(CameraLensDirection.back);
-                        },
-                        openSettings: _openCameraSettings,
-                      )
-                    : _SplitCameraLayout(
-                        key: const ValueKey('split-layout'),
-                        frontCameraController: _frontCameraController,
-                        rearCameraController: _rearCameraController,
-                        frontPermissionStatus: _frontPermissionStatus,
-                        rearPermissionStatus: _rearPermissionStatus,
-                        isInitializing: _isInitializing,
-                        errorMessage: _errorMessage,
-                        requestFrontPermission: () {
-                          _handlePermissionRequest(CameraLensDirection.front);
-                        },
-                        requestRearPermission: () {
-                          _handlePermissionRequest(CameraLensDirection.back);
-                        },
-                        openSettings: _openCameraSettings,
-                      ),
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _LensSection(
+                    title: 'Caméra avant',
+                    lensDirection: CameraLensDirection.front,
+                    controller: _activeLens == CameraLensDirection.front
+                        ? _cameraController
+                        : null,
+                    hasCamera: _frontCamera != null,
+                    permissionStatus: _frontPermissionStatus,
+                    errorMessage: _lensErrors[CameraLensDirection.front],
+                    isActive: _activeLens == CameraLensDirection.front,
+                    isLoadingAvailable: _isLoadingAvailableCameras,
+                    isInitializing: _isCameraInitializing &&
+                        (_pendingLens == CameraLensDirection.front),
+                    isBusy: _isCameraInitializing &&
+                        (_pendingLens != null &&
+                            _pendingLens != CameraLensDirection.front),
+                    isAnotherCameraActive: _activeLens != null &&
+                        _activeLens != CameraLensDirection.front,
+                    onStart: () {
+                      _startCamera(CameraLensDirection.front);
+                    },
+                    onStop: _stopCamera,
+                    onRequestPermission: () {
+                      _requestPermission(CameraLensDirection.front);
+                    },
+                    onOpenSettings: _openCameraSettings,
+                  ),
+                  const SizedBox(height: 20),
+                  _LensSection(
+                    title: 'Caméra arrière',
+                    lensDirection: CameraLensDirection.back,
+                    controller: _activeLens == CameraLensDirection.back
+                        ? _cameraController
+                        : null,
+                    hasCamera: _rearCamera != null,
+                    permissionStatus: _rearPermissionStatus,
+                    errorMessage: _lensErrors[CameraLensDirection.back],
+                    isActive: _activeLens == CameraLensDirection.back,
+                    isLoadingAvailable: _isLoadingAvailableCameras,
+                    isInitializing: _isCameraInitializing &&
+                        (_pendingLens == CameraLensDirection.back),
+                    isBusy: _isCameraInitializing &&
+                        (_pendingLens != null &&
+                            _pendingLens != CameraLensDirection.back),
+                    isAnotherCameraActive: _activeLens != null &&
+                        _activeLens != CameraLensDirection.back,
+                    onStart: () {
+                      _startCamera(CameraLensDirection.back);
+                    },
+                    onStop: _stopCamera,
+                    onRequestPermission: () {
+                      _requestPermission(CameraLensDirection.back);
+                    },
+                    onOpenSettings: _openCameraSettings,
+                  ),
+                ],
               ),
             ),
             Container(
@@ -398,10 +389,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest,
                 border: Border(
-                  top: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+                  top: BorderSide(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                  ),
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Text(
                 statusLabel,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -415,408 +409,188 @@ class _DetectionScreenState extends State<DetectionScreen> {
       ),
     );
   }
-
-  String _describeResolutionPreset(ResolutionPreset preset) {
-    switch (preset) {
-      case ResolutionPreset.low:
-        return 'basse';
-      case ResolutionPreset.medium:
-        return 'moyenne';
-      case ResolutionPreset.high:
-        return 'haute';
-      case ResolutionPreset.veryHigh:
-        return 'très haute';
-      case ResolutionPreset.ultraHigh:
-        return 'ultra';
-      case ResolutionPreset.max:
-        return 'maximale';
-    }
-  }
-
-  bool _shouldRetryWithLowerPreset(CameraException error) {
-    final code = error.code.toLowerCase();
-    final description = (error.description ?? '').toLowerCase();
-
-    if (code.contains('maxcamerasinuse')) {
-      return true;
-    }
-
-    const retryPhrases = [
-      'max cameras in use',
-      'maximum number of cameras',
-      'multiple simultaneous cameras not supported',
-      'already in use',
-      'too many requests to open camera',
-    ];
-
-    return retryPhrases.any(description.contains);
-  }
 }
 
-class _PictureInPictureLayout extends StatelessWidget {
-  const _PictureInPictureLayout({
-    super.key,
-    required this.isFrontCameraPrimary,
-    required this.frontCameraController,
-    required this.rearCameraController,
-    required this.frontPermissionStatus,
-    required this.rearPermissionStatus,
-    required this.isInitializing,
+class _LensSection extends StatelessWidget {
+  const _LensSection({
+    required this.title,
+    required this.lensDirection,
+    required this.controller,
+    required this.hasCamera,
+    required this.permissionStatus,
     required this.errorMessage,
-    required this.swapPrimaryCamera,
-    required this.requestFrontPermission,
-    required this.requestRearPermission,
-    required this.openSettings,
+    required this.isActive,
+    required this.isLoadingAvailable,
+    required this.isInitializing,
+    required this.isBusy,
+    required this.isAnotherCameraActive,
+    required this.onStart,
+    required this.onStop,
+    required this.onRequestPermission,
+    required this.onOpenSettings,
   });
 
-  final bool isFrontCameraPrimary;
-  final CameraController? frontCameraController;
-  final CameraController? rearCameraController;
-  final CameraPermissionStatus frontPermissionStatus;
-  final CameraPermissionStatus rearPermissionStatus;
-  final bool isInitializing;
+  final String title;
+  final CameraLensDirection lensDirection;
+  final CameraController? controller;
+  final bool hasCamera;
+  final CameraPermissionStatus permissionStatus;
   final String? errorMessage;
-  final VoidCallback swapPrimaryCamera;
-  final VoidCallback requestFrontPermission;
-  final VoidCallback requestRearPermission;
-  final VoidCallback openSettings;
+  final bool isActive;
+  final bool isLoadingAvailable;
+  final bool isInitializing;
+  final bool isBusy;
+  final bool isAnotherCameraActive;
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+  final VoidCallback onRequestPermission;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
-    final primaryController =
-        isFrontCameraPrimary ? frontCameraController : rearCameraController;
-    final secondaryController =
-        isFrontCameraPrimary ? rearCameraController : frontCameraController;
+    final theme = Theme.of(context);
+    final isCameraReady = controller?.value.isInitialized == true;
+    final aspectRatio = isCameraReady ? controller!.value.aspectRatio : 16 / 9;
+    final bool isStartDisabled =
+        !hasCamera || isInitializing || isLoadingAvailable || isBusy;
 
-    final primaryLabel = _cameraLensLabel(
-      primaryController,
-      isFrontCameraPrimary ? 'Caméra avant' : 'Caméra arrière',
-    );
-    final secondaryLabel = _cameraLensLabel(
-      secondaryController,
-      isFrontCameraPrimary ? 'Caméra arrière' : 'Caméra avant',
-    );
-    final primaryPermissionStatus =
-        isFrontCameraPrimary ? frontPermissionStatus : rearPermissionStatus;
-    final secondaryPermissionStatus =
-        isFrontCameraPrimary ? rearPermissionStatus : frontPermissionStatus;
-    final requestPrimaryPermission =
-        isFrontCameraPrimary ? requestFrontPermission : requestRearPermission;
-    final requestSecondaryPermission =
-        isFrontCameraPrimary ? requestRearPermission : requestFrontPermission;
-    final primaryLensDirection =
-        isFrontCameraPrimary ? CameraLensDirection.front : CameraLensDirection.back;
-    final secondaryLensDirection =
-        isFrontCameraPrimary ? CameraLensDirection.back : CameraLensDirection.front;
-
-    final overlayWidth = math.min(
-      240.0,
-      MediaQuery.of(context).size.width * 0.45,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Tooltip(
-              message: primaryLabel,
-              preferBelow: false,
-              child: _CameraSection(
-                controller: primaryController,
-                isInitializing: isInitializing,
-                errorMessage: errorMessage,
-                lensDirection: primaryLensDirection,
-                permissionStatus: primaryPermissionStatus,
-                onRequestPermission: requestPrimaryPermission,
-                onOpenSettings: openSettings,
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-          Align(
-            alignment: Alignment.topRight,
-            child: SizedBox(
-              width: overlayWidth,
-              child: Tooltip(
-                message: secondaryLabel,
-                child: Stack(
-                  children: [
-                    _CameraSection(
-                      controller: secondaryController,
-                      isInitializing: isInitializing,
-                      errorMessage: errorMessage,
-                      isCompact: true,
-                      onTap: swapPrimaryCamera,
-                      lensDirection: secondaryLensDirection,
-                      permissionStatus: secondaryPermissionStatus,
-                      onRequestPermission: requestSecondaryPermission,
-                      onOpenSettings: openSettings,
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(color: Colors.black),
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: isCameraReady
+                      ? CameraPreview(controller!)
+                      : _LensPlaceholder(
+                          lensDirection: lensDirection,
+                          hasCamera: hasCamera,
+                          permissionStatus: permissionStatus,
+                          errorMessage: errorMessage,
+                          isActive: isActive,
+                          isInitializing: isInitializing,
+                          isBusy: isBusy,
+                          isLoadingAvailable: isLoadingAvailable,
+                          isAnotherCameraActive: isAnotherCameraActive,
+                          onRequestPermission: onRequestPermission,
+                          onOpenSettings: onOpenSettings,
                         ),
-                        child: const Padding(
-                          padding: EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.touch_app,
-                            size: 16,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            if (isActive && isCameraReady)
+              FilledButton.icon(
+                onPressed: onStop,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('Arrêter la caméra'),
+              )
+            else
+              FilledButton.icon(
+                onPressed: isStartDisabled ? null : onStart,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('Activer la caméra'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LensPlaceholder extends StatelessWidget {
+  const _LensPlaceholder({
+    required this.lensDirection,
+    required this.hasCamera,
+    required this.permissionStatus,
+    required this.errorMessage,
+    required this.isActive,
+    required this.isInitializing,
+    required this.isBusy,
+    required this.isLoadingAvailable,
+    required this.isAnotherCameraActive,
+    required this.onRequestPermission,
+    required this.onOpenSettings,
+  });
+
+  final CameraLensDirection lensDirection;
+  final bool hasCamera;
+  final CameraPermissionStatus permissionStatus;
+  final String? errorMessage;
+  final bool isActive;
+  final bool isInitializing;
+  final bool isBusy;
+  final bool isLoadingAvailable;
+  final bool isAnotherCameraActive;
+  final VoidCallback onRequestPermission;
+  final VoidCallback onOpenSettings;
+
+  String get _lensName {
+    switch (lensDirection) {
+      case CameraLensDirection.front:
+        return 'caméra avant';
+      case CameraLensDirection.back:
+        return 'caméra arrière';
+      case CameraLensDirection.external:
+        return 'caméra externe';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    Widget message;
+
+    if (!hasCamera) {
+      message = Text(
+        'Cette $_lensName n\'est pas disponible sur cet appareil.',
+        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+        textAlign: TextAlign.center,
+      );
+    } else if (isLoadingAvailable) {
+      message = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(color: Colors.white70),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'Recherche des caméras disponibles…',
+            style: TextStyle(color: Colors.white70),
+            textAlign: TextAlign.center,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CameraSection extends StatelessWidget {
-  const _CameraSection({
-    required this.controller,
-    required this.isInitializing,
-    required this.errorMessage,
-    required this.lensDirection,
-    required this.permissionStatus,
-    required this.onRequestPermission,
-    required this.onOpenSettings,
-    this.isCompact = false,
-    this.onTap,
-  });
-
-  final CameraController? controller;
-  final bool isInitializing;
-  final String? errorMessage;
-  final CameraLensDirection lensDirection;
-  final CameraPermissionStatus permissionStatus;
-  final VoidCallback onRequestPermission;
-  final VoidCallback onOpenSettings;
-  final bool isCompact;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bool isCameraReady = controller?.value.isInitialized == true;
-
-    final borderRadius = BorderRadius.circular(isCompact ? 14 : 18);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
-            color: Colors.black,
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (isCameraReady)
-                Positioned.fill(
-                  child: CameraPreview(controller!),
-                )
-              else
-                _CameraPlaceholder(
-                  isInitializing: isInitializing,
-                  errorMessage: errorMessage,
-                  lensDirection: lensDirection,
-                  permissionStatus: permissionStatus,
-                  onRequestPermission: onRequestPermission,
-                  onOpenSettings: onOpenSettings,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-String _cameraLensLabel(CameraController? controller, String fallback) {
-  final lensDirection = controller?.description.lensDirection;
-
-  if (lensDirection == null) {
-    return fallback;
-  }
-
-  switch (lensDirection) {
-    case CameraLensDirection.front:
-      return 'Caméra avant';
-    case CameraLensDirection.back:
-      return 'Caméra arrière';
-    case CameraLensDirection.external:
-      return 'Caméra externe';
-  }
-
-  return fallback;
-}
-
-class _CameraPanel extends StatelessWidget {
-  const _CameraPanel({
-    required this.fallbackLabel,
-    required this.controller,
-    required this.isInitializing,
-    required this.errorMessage,
-    required this.lensDirection,
-    required this.permissionStatus,
-    required this.onRequestPermission,
-    required this.onOpenSettings,
-  });
-
-  final String fallbackLabel;
-  final CameraController? controller;
-  final bool isInitializing;
-  final String? errorMessage;
-  final CameraLensDirection lensDirection;
-  final CameraPermissionStatus permissionStatus;
-  final VoidCallback onRequestPermission;
-  final VoidCallback onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = _cameraLensLabel(controller, fallbackLabel);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: _CameraSection(
-            controller: controller,
-            isInitializing: isInitializing,
-            errorMessage: errorMessage,
-            lensDirection: lensDirection,
-            permissionStatus: permissionStatus,
-            onRequestPermission: onRequestPermission,
-            onOpenSettings: onOpenSettings,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SplitCameraLayout extends StatelessWidget {
-  const _SplitCameraLayout({
-    super.key,
-    required this.frontCameraController,
-    required this.rearCameraController,
-    required this.frontPermissionStatus,
-    required this.rearPermissionStatus,
-    required this.isInitializing,
-    required this.errorMessage,
-    required this.requestFrontPermission,
-    required this.requestRearPermission,
-    required this.openSettings,
-  });
-
-  final CameraController? frontCameraController;
-  final CameraController? rearCameraController;
-  final CameraPermissionStatus frontPermissionStatus;
-  final CameraPermissionStatus rearPermissionStatus;
-  final bool isInitializing;
-  final String? errorMessage;
-  final VoidCallback requestFrontPermission;
-  final VoidCallback requestRearPermission;
-  final VoidCallback openSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: _CameraPanel(
-              fallbackLabel: 'Caméra avant',
-              controller: frontCameraController,
-              isInitializing: isInitializing,
-              errorMessage: errorMessage,
-              lensDirection: CameraLensDirection.front,
-              permissionStatus: frontPermissionStatus,
-              onRequestPermission: requestFrontPermission,
-              onOpenSettings: openSettings,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-            child: _CameraPanel(
-              fallbackLabel: 'Caméra arrière',
-              controller: rearCameraController,
-              isInitializing: isInitializing,
-              errorMessage: errorMessage,
-              lensDirection: CameraLensDirection.back,
-              permissionStatus: rearPermissionStatus,
-              onRequestPermission: requestRearPermission,
-              onOpenSettings: openSettings,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CameraPlaceholder extends StatelessWidget {
-  const _CameraPlaceholder({
-    required this.isInitializing,
-    required this.errorMessage,
-    required this.lensDirection,
-    required this.permissionStatus,
-    required this.onRequestPermission,
-    required this.onOpenSettings,
-  });
-
-  final bool isInitializing;
-  final String? errorMessage;
-  final CameraLensDirection lensDirection;
-  final CameraPermissionStatus permissionStatus;
-  final VoidCallback onRequestPermission;
-  final VoidCallback onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final lensName = () {
-      switch (lensDirection) {
-        case CameraLensDirection.front:
-          return 'caméra avant';
-        case CameraLensDirection.back:
-          return 'caméra arrière';
-        case CameraLensDirection.external:
-          return 'caméra externe';
-      }
-    }();
-
-    final Widget message;
-    if (permissionStatus == CameraPermissionStatus.permanentlyDenied) {
+      );
+    } else if (permissionStatus == CameraPermissionStatus.permanentlyDenied) {
       message = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'L\'accès à la $lensName est désactivé. Activez-la depuis les paramètres système.',
+            'L\'accès à la $_lensName est bloqué. Activez-la depuis les paramètres système.',
             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
@@ -837,7 +611,7 @@ class _CameraPlaceholder extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'SafeDrive a besoin d\'accéder à la $lensName pour démarrer la détection.',
+            'SafeDrive a besoin d\'accéder à la $_lensName pour démarrer la détection.',
             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
@@ -848,13 +622,7 @@ class _CameraPlaceholder extends StatelessWidget {
           ),
         ],
       );
-    } else if (errorMessage != null) {
-      message = Text(
-        errorMessage!,
-        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
-        textAlign: TextAlign.center,
-      );
-    } else if (isInitializing) {
+    } else if (isInitializing && isActive) {
       message = Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
@@ -865,26 +633,55 @@ class _CameraPlaceholder extends StatelessWidget {
           ),
           SizedBox(height: 12),
           Text(
-            'Initialisation des flux caméra…',
+            'Initialisation du flux vidéo…',
             style: TextStyle(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
         ],
       );
+    } else if (isBusy) {
+      message = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(color: Colors.white70),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'Veuillez patienter…',
+            style: TextStyle(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      );
+    } else if (errorMessage != null && errorMessage!.isNotEmpty) {
+      message = Text(
+        errorMessage!,
+        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+        textAlign: TextAlign.center,
+      );
+    } else if (isAnotherCameraActive) {
+      message = Text(
+        'Une autre caméra est actuellement active. Arrêtez-la pour utiliser cette $_lensName.',
+        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+        textAlign: TextAlign.center,
+      );
     } else {
       message = const Text(
-        'Caméra indisponible',
+        'Appuyez sur « Activer la caméra » pour démarrer le flux.',
         style: TextStyle(color: Colors.white70),
+        textAlign: TextAlign.center,
       );
     }
 
-    return Container(
-      color: Colors.black,
-      alignment: Alignment.center,
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(16),
         child: message,
       ),
     );
   }
 }
+
