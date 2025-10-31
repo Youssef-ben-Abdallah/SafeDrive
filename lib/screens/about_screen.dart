@@ -11,11 +11,11 @@ class AboutScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('About'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: const Padding(
+        padding: EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text(
               'SafeDrive',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),

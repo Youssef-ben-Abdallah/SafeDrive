@@ -1,4 +1,3 @@
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 
 import '../models/detection_event.dart';
@@ -42,8 +41,8 @@ class ObjectDetectionService {
 
     for (final detectedObject in objects) {
       for (final category in detectedObject.labels) {
-        final label = category.label.toLowerCase();
-        final confidence = category.confidence.clamp(0, 1);
+        final label = category.text.toLowerCase();
+        final confidence = category.confidence.clamp(0.0, 1.0).toDouble();
 
         if (_matchesPhone(label)) {
           final event = DetectionEvent(
@@ -58,7 +57,7 @@ class ObjectDetectionService {
             timestamp: DateTime.now(),
             type: DetectionEventType.distraction,
             confidence: confidence,
-            reason: 'Potential hazard detected (${category.label})',
+            reason: 'Potential hazard detected (${category.text})',
           );
           bestEvent = _pickHigherConfidence(bestEvent, event);
         }

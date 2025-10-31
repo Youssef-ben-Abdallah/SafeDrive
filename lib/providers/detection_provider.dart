@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -266,7 +265,7 @@ class DetectionProvider extends ChangeNotifier {
     for (final plane in image.planes) {
       buffer.putUint8List(plane.bytes);
     }
-    final Uint8List bytes = buffer.done().buffer.asUint8List();
+    final bytes = buffer.done().buffer.asUint8List();
 
     final ui.Size imageSize = ui.Size(
       image.width.toDouble(),
@@ -276,23 +275,14 @@ class DetectionProvider extends ChangeNotifier {
         InputImageRotationValue.fromRawValue(description.sensorOrientation);
     final InputImageFormat? format =
         InputImageFormatValue.fromRawValue(image.format.raw);
-    final planeData = image.planes
-        .map(
-          (plane) => InputImagePlaneMetadata(
-            bytesPerRow: plane.bytesPerRow,
-            height: plane.height,
-            width: plane.width,
-          ),
-        )
-        .toList();
-
     return InputImage.fromBytes(
       bytes: bytes,
       metadata: InputImageMetadata(
         size: imageSize,
         rotation: rotation ?? InputImageRotation.rotation0deg,
         format: format ?? InputImageFormat.nv21,
-        planeData: planeData,
+        bytesPerRow:
+            image.planes.isNotEmpty ? image.planes.first.bytesPerRow : 0,
       ),
     );
   }

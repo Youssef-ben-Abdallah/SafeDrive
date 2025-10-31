@@ -30,7 +30,7 @@ class CameraPermissionService {
   /// requesting it separately allows the UI to show contextual messages to the
   /// user when each lens is needed.
   Future<CameraPermissionStatus> requestPermissionForLens(
-    CameraLensDirection _lensDirection,
+    CameraLensDirection lensDirection,
   ) async {
     if (kIsWeb) {
       return CameraPermissionStatus.granted;
