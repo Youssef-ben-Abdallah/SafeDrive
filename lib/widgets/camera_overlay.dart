@@ -29,7 +29,7 @@ class CameraOverlay extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: primaryColor.withOpacity(0.5)),
+        border: Border.all(color: primaryColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,7 +63,7 @@ class CameraOverlay extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: theme.colorScheme.error.withOpacity(0.08),
+                color: theme.colorScheme.error.withValues(alpha: 0.08),
               ),
               child: Row(
                 children: [
@@ -105,7 +105,7 @@ class CameraOverlay extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     return Chip(
-      backgroundColor: color.withOpacity(0.12),
+      backgroundColor: color.withValues(alpha: 0.12),
       avatar: CircleAvatar(
         backgroundColor: color,
         child: Text(

@@ -282,9 +282,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant,
+                color: theme.colorScheme.surfaceContainerHighest,
                 border: Border(
-                  top: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+                  top: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
                 ),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -413,7 +413,7 @@ class _PictureInPictureLayout extends StatelessWidget {
                       right: 8,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withValues(alpha: 0.45),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Padding(
@@ -465,7 +465,7 @@ class _CameraSection extends StatelessWidget {
         borderRadius: borderRadius,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
+            border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
             color: Colors.black,
           ),
           child: Stack(
@@ -502,9 +502,9 @@ String _cameraLensLabel(CameraController? controller, String fallback) {
       return 'Caméra arrière';
     case CameraLensDirection.external:
       return 'Caméra externe';
-    case CameraLensDirection.unknown:
-      return fallback;
   }
+
+  return fallback;
 }
 
 class _CameraPanel extends StatelessWidget {
