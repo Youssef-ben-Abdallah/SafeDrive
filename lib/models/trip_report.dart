@@ -4,8 +4,8 @@ class TripReport {
   TripReport({
     required this.startTime,
     required this.endTime,
-    required this.events,
-  });
+    required List<DetectionEvent> events,
+  }) : events = List.unmodifiable(events);
 
   final DateTime startTime;
   final DateTime endTime;
@@ -18,4 +18,6 @@ class TripReport {
 
   int get distractionCount =>
       events.where((event) => event.type == DetectionEventType.distraction).length;
+
+  int get totalAlerts => events.length;
 }

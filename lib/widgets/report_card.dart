@@ -1,38 +1,139 @@
 import 'package:flutter/material.dart';
 
 import '../models/detection_event.dart';
+import '../models/trip_report.dart';
 
 class ReportCard extends StatelessWidget {
   const ReportCard({
     super.key,
-    required this.event,
+    required this.report,
   });
 
-  final DetectionEvent event;
+  final TripReport report;
 
   @override
   Widget build(BuildContext context) {
-    final color = event.type == DetectionEventType.drowsiness
-        ? Colors.redAccent
-        : Colors.orangeAccent;
-
     return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color,
-          child: Icon(
-            event.type == DetectionEventType.drowsiness
-                ? Icons.bedtime
-                : Icons.phone_android,
-            color: Colors.white,
-          ),
+      child: ExpansionTile(
+        leading: const Icon(Icons.directions_car),
+        title: Text(
+          'Trip on ${_formatDate(report.startTime)}',
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        title: Text(event.typeLabel),
         subtitle: Text(
-          'Confidence ${(event.confidence * 100).toStringAsFixed(0)}% • '
-          '${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}',
+          'Duration ${_formatDuration(report.duration)} • ${report.totalAlerts} alert(s)',
         ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatRow(
+                  context,
+                  label: 'Drowsiness alerts',
+                  value: report.drowsinessCount,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
+                  label: 'Distraction alerts',
+                  value: report.distractionCount,
+                  color: Colors.orangeAccent,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Timeline',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                if (report.events.isEmpty)
+                  const Text('No alerts recorded during this trip.')
+                else
+                  ...report.events.map(
+                    (event) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        event.type == DetectionEventType.drowsiness
+                            ? Icons.bedtime
+                            : Icons.phone_android,
+                        color: event.type == DetectionEventType.drowsiness
+                            ? Colors.redAccent
+                            : Colors.orangeAccent,
+                      ),
+                      title: Text(event.typeLabel),
+                      subtitle: Text(
+                        'Confidence ${(event.confidence * 100).toStringAsFixed(0)}% • '
+                        '${_formatTime(event.timestamp)}',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildStatRow(
+    BuildContext context, {
+    required String label,
+    required int value,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label)),
+        Text(
+          value.toString(),
+          style: Theme.of(context)
+              .textTheme
+              .bodyLarge
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime time) {
+    final month = time.month.toString().padLeft(2, '0');
+    final day = time.day.toString().padLeft(2, '0');
+    final year = time.year;
+    return '$year-$month-$day';
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    final buffer = <String>[];
+    if (hours > 0) {
+      buffer.add('${hours}h');
+    }
+    if (minutes > 0) {
+      buffer.add('${minutes}m');
+    }
+    if (seconds > 0 || buffer.isEmpty) {
+      buffer.add('${seconds}s');
+    }
+    return buffer.join(' ');
+  }
+
+  String _formatTime(DateTime time) {
+    final hours = time.hour.toString().padLeft(2, '0');
+    final minutes = time.minute.toString().padLeft(2, '0');
+    final seconds = time.second.toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 }

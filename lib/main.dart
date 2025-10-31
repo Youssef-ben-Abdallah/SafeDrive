@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'providers/detection_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/about_screen.dart';
 import 'screens/detection_screen.dart';
@@ -18,8 +19,11 @@ class SafeDriveApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => SettingsProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => DetectionProvider()),
+      ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) {
           final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
