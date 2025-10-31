@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
@@ -16,6 +18,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
   ResolutionPreset? _activeResolutionPreset;
   bool _isInitializing = true;
   String? _errorMessage;
+  bool _isPictureInPictureMode = false;
+  bool _isFrontCameraPrimary = true;
+
+  static const List<String> _frontCameraHighlights = [
+    'Détection du visage et des yeux',
+    'Détection du bâillement (somnolence)',
+    '→ Indicateurs visuels : yeux fermés, fatigue',
+  ];
+
+  static const List<String> _rearCameraHighlights = [
+    'Détection d\'objets et de mouvement',
+    'Suivi des véhicules, piétons ou obstacles',
+    '→ Avertissements visuels en cas de danger',
+  ];
 
   @override
   void initState() {
@@ -165,6 +181,18 @@ class _DetectionScreenState extends State<DetectionScreen> {
     super.dispose();
   }
 
+  void _togglePictureInPictureMode() {
+    setState(() {
+      _isPictureInPictureMode = !_isPictureInPictureMode;
+    });
+  }
+
+  void _swapPrimaryCamera() {
+    setState(() {
+      _isFrontCameraPrimary = !_isFrontCameraPrimary;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -189,40 +217,51 @@ class _DetectionScreenState extends State<DetectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SafeDrive AI'),
+        actions: [
+          IconButton(
+            onPressed: _togglePictureInPictureMode,
+            tooltip: _isPictureInPictureMode
+                ? 'Afficher les caméras en mosaïque'
+                : 'Afficher en mode image dans l\'image',
+            icon: Icon(
+              _isPictureInPictureMode
+                  ? Icons.grid_view_rounded
+                  : Icons.picture_in_picture_alt_rounded,
+            ),
+          ),
+          if (_isPictureInPictureMode)
+            IconButton(
+              onPressed: _swapPrimaryCamera,
+              tooltip: 'Inverser les caméras',
+              icon: const Icon(Icons.swap_horiz_rounded),
+            ),
+        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                child: _CameraSection(
-                  title: 'FRONT CAMERA (Caméra avant)',
-                  highlights: const [
-                    'Détection du visage et des yeux',
-                    'Détection du bâillement (somnolence)',
-                    '→ Indicateurs visuels : yeux fermés, fatigue',
-                  ],
-                  controller: _frontCameraController,
-                  isInitializing: _isInitializing,
-                  errorMessage: _errorMessage,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-                child: _CameraSection(
-                  title: 'REAR CAMERA (Caméra arrière)',
-                  highlights: const [
-                    'Détection d\'objets et de mouvement',
-                    'Suivi des véhicules, piétons ou obstacles',
-                    '→ Avertissements visuels en cas de danger',
-                  ],
-                  controller: _rearCameraController,
-                  isInitializing: _isInitializing,
-                  errorMessage: _errorMessage,
-                ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _isPictureInPictureMode
+                    ? _PictureInPictureLayout(
+                        key: const ValueKey('pip-layout'),
+                        isFrontCameraPrimary: _isFrontCameraPrimary,
+                        frontCameraController: _frontCameraController,
+                        rearCameraController: _rearCameraController,
+                        isInitializing: _isInitializing,
+                        errorMessage: _errorMessage,
+                        swapPrimaryCamera: _swapPrimaryCamera,
+                      )
+                    : _SplitCameraLayout(
+                        key: const ValueKey('split-layout'),
+                        frontCameraController: _frontCameraController,
+                        rearCameraController: _rearCameraController,
+                        isInitializing: _isInitializing,
+                        errorMessage: _errorMessage,
+                      ),
               ),
             ),
             Container(
@@ -285,6 +324,133 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 }
 
+class _SplitCameraLayout extends StatelessWidget {
+  const _SplitCameraLayout({
+    super.key,
+    required this.frontCameraController,
+    required this.rearCameraController,
+    required this.isInitializing,
+    required this.errorMessage,
+  });
+
+  final CameraController? frontCameraController;
+  final CameraController? rearCameraController;
+  final bool isInitializing;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: _CameraSection(
+              title: 'FRONT CAMERA (Caméra avant)',
+              highlights: _DetectionScreenState._frontCameraHighlights,
+              controller: frontCameraController,
+              isInitializing: isInitializing,
+              errorMessage: errorMessage,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            child: _CameraSection(
+              title: 'REAR CAMERA (Caméra arrière)',
+              highlights: _DetectionScreenState._rearCameraHighlights,
+              controller: rearCameraController,
+              isInitializing: isInitializing,
+              errorMessage: errorMessage,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PictureInPictureLayout extends StatelessWidget {
+  const _PictureInPictureLayout({
+    super.key,
+    required this.isFrontCameraPrimary,
+    required this.frontCameraController,
+    required this.rearCameraController,
+    required this.isInitializing,
+    required this.errorMessage,
+    required this.swapPrimaryCamera,
+  });
+
+  final bool isFrontCameraPrimary;
+  final CameraController? frontCameraController;
+  final CameraController? rearCameraController;
+  final bool isInitializing;
+  final String? errorMessage;
+  final VoidCallback swapPrimaryCamera;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryController =
+        isFrontCameraPrimary ? frontCameraController : rearCameraController;
+    final secondaryController =
+        isFrontCameraPrimary ? rearCameraController : frontCameraController;
+
+    final primaryTitle = isFrontCameraPrimary
+        ? 'FRONT CAMERA (Caméra avant)'
+        : 'REAR CAMERA (Caméra arrière)';
+    final secondaryTitle = isFrontCameraPrimary
+        ? 'REAR CAMERA (Caméra arrière)'
+        : 'FRONT CAMERA (Caméra avant)';
+
+    final primaryHighlights = isFrontCameraPrimary
+        ? _DetectionScreenState._frontCameraHighlights
+        : _DetectionScreenState._rearCameraHighlights;
+    final secondaryHighlights = isFrontCameraPrimary
+        ? _DetectionScreenState._rearCameraHighlights
+        : _DetectionScreenState._frontCameraHighlights;
+
+    final overlayWidth = math.min(
+      240.0,
+      MediaQuery.of(context).size.width * 0.45,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _CameraSection(
+              title: primaryTitle,
+              highlights: primaryHighlights,
+              controller: primaryController,
+              isInitializing: isInitializing,
+              errorMessage: errorMessage,
+            ),
+          ),
+          Align(
+            alignment: Alignment.topRight,
+            child: SizedBox(
+              width: overlayWidth,
+              child: _CameraSection(
+                title: secondaryTitle,
+                highlights: secondaryHighlights,
+                controller: secondaryController,
+                isInitializing: isInitializing,
+                errorMessage: errorMessage,
+                showHighlights: false,
+                subtitle: 'Touchez pour inverser',
+                isCompact: true,
+                onTap: swapPrimaryCamera,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CameraSection extends StatelessWidget {
   const _CameraSection({
     required this.title,
@@ -292,6 +458,10 @@ class _CameraSection extends StatelessWidget {
     required this.controller,
     required this.isInitializing,
     required this.errorMessage,
+    this.showHighlights = true,
+    this.subtitle,
+    this.isCompact = false,
+    this.onTap,
   });
 
   final String title;
@@ -299,87 +469,115 @@ class _CameraSection extends StatelessWidget {
   final CameraController? controller;
   final bool isInitializing;
   final String? errorMessage;
+  final bool showHighlights;
+  final String? subtitle;
+  final bool isCompact;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bool isCameraReady = controller?.value.isInitialized == true;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
-          color: Colors.black,
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (isCameraReady)
+    final borderRadius = BorderRadius.circular(isCompact ? 14 : 18);
+    final paddingValue = isCompact ? 14.0 : 20.0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
+            color: Colors.black,
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (isCameraReady)
+                Positioned.fill(
+                  child: CameraPreview(controller!),
+                )
+              else
+                _CameraPlaceholder(
+                  isInitializing: isInitializing,
+                  errorMessage: errorMessage,
+                ),
               Positioned.fill(
-                child: CameraPreview(controller!),
-              )
-            else
-              _CameraPlaceholder(
-                isInitializing: isInitializing,
-                errorMessage: errorMessage,
-              ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withOpacity(0.55),
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.4),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(isCompact ? 0.6 : 0.55),
+                        Colors.transparent,
+                        Colors.black.withOpacity(isCompact ? 0.55 : 0.4),
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              top: 20,
-              left: 20,
-              right: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...highlights.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '• ',
-                            style: TextStyle(color: Colors.white, fontSize: 16),
-                          ),
-                          Expanded(
-                            child: Text(
-                              item,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
+              Positioned(
+                top: paddingValue,
+                left: paddingValue,
+                right: paddingValue,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: (isCompact
+                              ? theme.textTheme.titleMedium
+                              : theme.textTheme.titleLarge)
+                          ?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                ],
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    if (showHighlights) ...[
+                      const SizedBox(height: 12),
+                      ...highlights.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '• ',
+                                style:
+                                    TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  item,
+                                  style:
+                                      theme.textTheme.bodyMedium?.copyWith(
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
