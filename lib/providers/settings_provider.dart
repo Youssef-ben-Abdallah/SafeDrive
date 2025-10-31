@@ -6,10 +6,10 @@ class SettingsProvider extends ChangeNotifier {
   bool _vibrationAlertsEnabled = true;
   String _language = 'en';
 
-  bool get isDarkMode = _isDarkMode;
-  bool get soundAlertsEnabled = _soundAlertsEnabled;
-  bool get vibrationAlertsEnabled = _vibrationAlertsEnabled;
-  String get language = _language;
+  bool get isDarkMode => _isDarkMode;
+  bool get soundAlertsEnabled => _soundAlertsEnabled;
+  bool get vibrationAlertsEnabled => _vibrationAlertsEnabled;
+  String get language => _language;
 
   void setDarkMode(bool value) {
     if (_isDarkMode == value) return;
