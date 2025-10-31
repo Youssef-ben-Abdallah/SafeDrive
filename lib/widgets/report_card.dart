@@ -67,9 +67,11 @@ class ReportCard extends StatelessWidget {
                       ),
                       title: Text(event.typeLabel),
                       subtitle: Text(
+                        '${event.reason}\n'
                         'Confidence ${(event.confidence * 100).toStringAsFixed(0)}% • '
                         '${_formatTime(event.timestamp)}',
                       ),
+                      isThreeLine: true,
                     ),
                   ),
               ],

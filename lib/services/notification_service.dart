@@ -1,14 +1,17 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:vibration/vibration.dart';
 
 class NotificationService {
   bool _isInitialized = false;
+  bool _hasVibrator = false;
+  bool _hasCustomVibrationSupport = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    // Placeholder for requesting permissions and configuring local
-    // notifications. Keeping a short delay to mimic async initialization.
-    await Future<void>.delayed(const Duration(milliseconds: 150));
+    _hasVibrator = (await Vibration.hasVibrator()) ?? false;
+    _hasCustomVibrationSupport = (await Vibration.hasCustomVibrationsSupport()) ?? false;
     _isInitialized = true;
   }
 
@@ -22,11 +25,22 @@ class NotificationService {
       await initialize();
     }
 
-    // Until the real notification plugin is wired, surface alerts through the
-    // debug console so that testers can still follow the flow.
-    debugPrint(
-      'NotificationService -> $title | $body | sound=$sound | vibration=$vibration',
-    );
+    debugPrint('NotificationService -> $title | $body');
+
+    if (sound) {
+      FlutterRingtonePlayer.playAlarm(volume: 0.8);
+      Future<void>.delayed(const Duration(seconds: 3)).then((_) {
+        FlutterRingtonePlayer.stop();
+      });
+    }
+
+    if (vibration && _hasVibrator) {
+      if (_hasCustomVibrationSupport) {
+        await Vibration.vibrate(pattern: [0, 500, 150, 500]);
+      } else {
+        await Vibration.vibrate(duration: 800);
+      }
+    }
   }
 
   bool get isInitialized => _isInitialized;

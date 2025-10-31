@@ -1,10 +1,14 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../models/detection_event.dart';
 import '../models/trip_report.dart';
+import '../services/alert_log_service.dart';
 import '../services/face_detection_service.dart';
 import '../services/notification_service.dart';
 import '../services/object_detection_service.dart';
@@ -14,77 +18,95 @@ class DetectionProvider extends ChangeNotifier {
     FaceDetectionService? faceDetectionService,
     ObjectDetectionService? objectDetectionService,
     NotificationService? notificationService,
+    AlertLogService? alertLogService,
   })  : _faceDetectionService = faceDetectionService ?? FaceDetectionService(),
         _objectDetectionService =
             objectDetectionService ?? ObjectDetectionService(),
-        _notificationService = notificationService ?? NotificationService();
+        _notificationService = notificationService ?? NotificationService(),
+        _alertLogService = alertLogService ?? AlertLogService() {
+    unawaited(_restorePersistedData());
+  }
 
   final FaceDetectionService _faceDetectionService;
   final ObjectDetectionService _objectDetectionService;
   final NotificationService _notificationService;
-  final Random _random = Random();
+  final AlertLogService _alertLogService;
 
-  Timer? _eventTimer;
   bool _isInitializing = false;
   bool _isMonitoring = false;
+  bool _isProcessingFrame = false;
   bool _soundAlertsEnabled = true;
   bool _vibrationAlertsEnabled = true;
   String _statusMessage = 'Detector is idle.';
   String? _lastAlertMessage;
   DateTime? _sessionStartTime;
+  DateTime? _lastAlertTimestamp;
+  CameraLensDirection? _activeLensDirection;
 
-  final List<DetectionEvent> _events = [];
+  final List<DetectionEvent> _sessionEvents = [];
+  final List<DetectionEvent> _alertLog = [];
   final List<TripReport> _reports = [];
+
+  static const Duration _alertCooldown = Duration(seconds: 5);
+  static const int _maxAlertLogEntries = 200;
 
   bool get isInitializing => _isInitializing;
   bool get isMonitoring => _isMonitoring;
   String get statusMessage => _statusMessage;
   String? get lastAlertMessage => _lastAlertMessage;
   DateTime? get sessionStartTime => _sessionStartTime;
-  List<DetectionEvent> get events => List.unmodifiable(_events);
+  List<DetectionEvent> get events => List.unmodifiable(_sessionEvents);
   List<TripReport> get reports => List.unmodifiable(_reports);
-  DetectionEvent? get latestEvent => _events.isEmpty ? null : _events.first;
+  List<DetectionEvent> get alertLog => List.unmodifiable(_alertLog);
+  DetectionEvent? get latestEvent =>
+      _sessionEvents.isEmpty ? null : _sessionEvents.first;
 
-  int get drowsinessCount =>
-      _events.where((event) => event.type == DetectionEventType.drowsiness).length;
+  int get drowsinessCount => _sessionEvents
+      .where((event) => event.type == DetectionEventType.drowsiness)
+      .length;
 
-  int get distractionCount =>
-      _events.where((event) => event.type == DetectionEventType.distraction).length;
+  int get distractionCount => _sessionEvents
+      .where((event) => event.type == DetectionEventType.distraction)
+      .length;
 
   Future<void> startMonitoring({
     required bool soundAlertsEnabled,
     required bool vibrationAlertsEnabled,
+    required CameraLensDirection lensDirection,
   }) async {
-    if (_isInitializing || _isMonitoring) {
+    if (_isInitializing) {
       return;
+    }
+
+    if (_isMonitoring) {
+      await stopMonitoring();
     }
 
     _isInitializing = true;
     _statusMessage = 'Preparing detection services…';
     notifyListeners();
 
-    await Future.wait([
-      _faceDetectionService.initialize(),
-      _objectDetectionService.initialize(),
-      _notificationService.initialize(),
-    ]);
+    await _notificationService.initialize();
+    if (lensDirection == CameraLensDirection.front) {
+      await _faceDetectionService.initialize();
+    } else {
+      await _objectDetectionService.initialize();
+    }
 
     _soundAlertsEnabled = soundAlertsEnabled;
     _vibrationAlertsEnabled = vibrationAlertsEnabled;
-    _events.clear();
+    _sessionEvents.clear();
     _lastAlertMessage = null;
     _sessionStartTime = DateTime.now();
+    _lastAlertTimestamp = null;
+    _activeLensDirection = lensDirection;
 
     _isInitializing = false;
     _isMonitoring = true;
-    _statusMessage = 'Monitoring active. Stay focused!';
+    _statusMessage = lensDirection == CameraLensDirection.front
+        ? 'Monitoring driver attentiveness…'
+        : 'Monitoring surroundings for hazards…';
     notifyListeners();
-
-    _eventTimer?.cancel();
-    _eventTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _simulateDetectionCycle(),
-    );
   }
 
   Future<void> stopMonitoring() async {
@@ -92,33 +114,27 @@ class DetectionProvider extends ChangeNotifier {
       return;
     }
 
-    _eventTimer?.cancel();
-    _eventTimer = null;
-
-    final endTime = DateTime.now();
-    if (_sessionStartTime != null) {
-      _reports.insert(
-        0,
-        TripReport(
-          startTime: _sessionStartTime!,
-          endTime: endTime,
-          events: List<DetectionEvent>.from(_events.reversed),
-        ),
-      );
-    }
-
-    _events.clear();
     _isMonitoring = false;
     _isInitializing = false;
+
+    final endTime = DateTime.now();
+    if (_sessionStartTime != null && _sessionEvents.isNotEmpty) {
+      final report = TripReport(
+        startTime: _sessionStartTime!,
+        endTime: endTime,
+        events: List<DetectionEvent>.from(_sessionEvents.reversed),
+      );
+      _reports.insert(0, report);
+      await _alertLogService.persistReports(_reports);
+    }
+
+    _sessionEvents.clear();
     _sessionStartTime = null;
+    _activeLensDirection = null;
     _statusMessage = 'Detection paused.';
     _lastAlertMessage = null;
+    _lastAlertTimestamp = null;
     notifyListeners();
-
-    await Future.wait([
-      _faceDetectionService.dispose(),
-      _objectDetectionService.dispose(),
-    ]);
   }
 
   void updateAlertPreferences({
@@ -129,58 +145,160 @@ class DetectionProvider extends ChangeNotifier {
     _vibrationAlertsEnabled = vibrationAlertsEnabled;
   }
 
-  void _simulateDetectionCycle() {
-    if (!_isMonitoring) {
+  Future<void> handleCameraImage({
+    required CameraImage image,
+    required CameraDescription description,
+  }) async {
+    if (!_isMonitoring || _isProcessingFrame) {
       return;
     }
 
-    final now = DateTime.now();
-    final roll = _random.nextDouble();
+    if (_activeLensDirection == null ||
+        description.lensDirection != _activeLensDirection) {
+      return;
+    }
 
-    // Simulate a detection event roughly 40% of the time.
-    if (roll < 0.4) {
-      final isDrowsiness = roll < 0.2;
-      final event = DetectionEvent(
-        timestamp: now,
-        type: isDrowsiness
-            ? DetectionEventType.drowsiness
-            : DetectionEventType.distraction,
-        confidence: 0.7 + _random.nextDouble() * 0.3,
-      );
+    _isProcessingFrame = true;
 
-      _events.insert(0, event);
-      if (_events.length > 20) {
-        _events.removeLast();
+    try {
+      final inputImage = _convertToInputImage(image, description);
+
+      DetectionEvent? event;
+      if (_activeLensDirection == CameraLensDirection.front) {
+        event = await _faceDetectionService.processImage(inputImage);
+      } else {
+        event = await _objectDetectionService.processImage(inputImage);
       }
 
-      _lastAlertMessage = '${event.typeLabel} detected at ${_formatTime(now)}.';
-      _statusMessage = _lastAlertMessage!;
-      notifyListeners();
+      if (event != null) {
+        _registerEvent(event);
+      } else {
+        _updateIdleStatus();
+      }
+    } catch (error) {
+      debugPrint('DetectionProvider.handleCameraImage error: $error');
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
 
+  Future<void> _restorePersistedData() async {
+    try {
+      final alerts = await _alertLogService.loadAlerts();
+      final reports = await _alertLogService.loadReports();
+
+      _alertLog
+        ..clear()
+        ..addAll(alerts);
+      _reports
+        ..clear()
+        ..addAll(reports);
+      notifyListeners();
+    } catch (error) {
+      debugPrint('DetectionProvider._restorePersistedData error: $error');
+    }
+  }
+
+  void _registerEvent(DetectionEvent event) {
+    final now = event.timestamp;
+    if (_lastAlertTimestamp != null &&
+        now.difference(_lastAlertTimestamp!) < _alertCooldown) {
+      return;
+    }
+
+    _lastAlertTimestamp = now;
+
+    _sessionEvents.insert(0, event);
+    if (_sessionEvents.length > 50) {
+      _sessionEvents.removeLast();
+    }
+
+    _alertLog.insert(0, event);
+    if (_alertLog.length > _maxAlertLogEntries) {
+      _alertLog.removeRange(_maxAlertLogEntries, _alertLog.length);
+    }
+
+    _lastAlertMessage =
+        '${event.typeLabel} – ${(event.confidence * 100).toStringAsFixed(0)}%';
+    _statusMessage = event.reason;
+    notifyListeners();
+
+    unawaited(
       _notificationService.showAlert(
         title: 'SafeDrive Alert',
-        body: event.type == DetectionEventType.drowsiness
-            ? 'Drowsiness detected. Please take a break!'
-            : 'Distraction detected. Keep your eyes on the road.',
+        body: event.reason,
         sound: _soundAlertsEnabled,
         vibration: _vibrationAlertsEnabled,
-      );
-    } else {
-      _statusMessage = 'Monitoring active — no anomalies detected.';
+      ),
+    );
+
+    unawaited(_alertLogService.persistAlerts(_alertLog));
+  }
+
+  void _updateIdleStatus() {
+    if (_activeLensDirection == null) {
+      return;
+    }
+
+    final DateTime? lastAlert = _lastAlertTimestamp;
+    final bool canUpdateIdle = lastAlert == null ||
+        DateTime.now().difference(lastAlert) > const Duration(seconds: 2);
+
+    if (!canUpdateIdle) {
+      return;
+    }
+
+    final idleMessage = _activeLensDirection == CameraLensDirection.front
+        ? 'Monitoring active — no signs of drowsiness.'
+        : 'Monitoring active — surroundings clear.';
+
+    if (_statusMessage != idleMessage) {
+      _statusMessage = idleMessage;
       notifyListeners();
     }
   }
 
-  String _formatTime(DateTime time) {
-    final hours = time.hour.toString().padLeft(2, '0');
-    final minutes = time.minute.toString().padLeft(2, '0');
-    final seconds = time.second.toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
+  InputImage _convertToInputImage(
+    CameraImage image,
+    CameraDescription description,
+  ) {
+    final WriteBuffer buffer = WriteBuffer();
+    for (final plane in image.planes) {
+      buffer.putUint8List(plane.bytes);
+    }
+    final Uint8List bytes = buffer.done().buffer.asUint8List();
+
+    final ui.Size imageSize = ui.Size(
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    final InputImageRotation? rotation =
+        InputImageRotationValue.fromRawValue(description.sensorOrientation);
+    final InputImageFormat? format =
+        InputImageFormatValue.fromRawValue(image.format.raw);
+    final planeData = image.planes
+        .map(
+          (plane) => InputImagePlaneMetadata(
+            bytesPerRow: plane.bytesPerRow,
+            height: plane.height,
+            width: plane.width,
+          ),
+        )
+        .toList();
+
+    return InputImage.fromBytes(
+      bytes: bytes,
+      metadata: InputImageMetadata(
+        size: imageSize,
+        rotation: rotation ?? InputImageRotation.rotation0deg,
+        format: format ?? InputImageFormat.nv21,
+        planeData: planeData,
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _eventTimer?.cancel();
     _faceDetectionService.dispose();
     _objectDetectionService.dispose();
     super.dispose();
