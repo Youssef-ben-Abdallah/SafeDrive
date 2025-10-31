@@ -6,30 +6,38 @@ responsiveness.
 
 ## Current status
 
-This initial commit lays down the foundational Flutter structure inspired by the project specifications in
-[`docs/Cahier_des_Charges.md`](docs/Cahier_des_Charges.md). It includes:
+The application now integrates Firebase ML Kit to power both the front-facing drowsiness detector and the rear-facing
+hazard detector. Key features include:
 
-- Basic navigation across splash, home, detection, reports, settings, and about screens.
-- Placeholder widgets for detection overlays and report summaries.
-- Simple models to represent detection events and trip reports.
-- A `SettingsProvider` to demonstrate state management with Provider.
-- Service stubs ready for future Firebase ML Kit integrations.
+- Real-time driver monitoring that triggers alerts when the camera detects closed eyes or yawning.
+- Rear camera object detection that warns about phones, pedestrians, and nearby vehicles.
+- Audible and haptic alerts using native alarm and vibration APIs.
+- Persistent alert logging and driving reports stored locally.
+- Provider-based state management that keeps detection status in sync with the UI.
 
 ## Getting started
 
 1. Ensure the Flutter SDK (3.x) is installed locally.
-2. From the repository root, run:
+2. Create a Firebase project and enable the **ML Kit Face Detection** and **Object Detection & Tracking** APIs.
+3. Add the Firebase configuration files to the Flutter project:
+   - `android/app/google-services.json`
+   - `ios/Runner/GoogleService-Info.plist`
+   - (Optional) `macos/Runner/GoogleService-Info.plist` if you plan to run on macOS
+4. Make sure the Android project applies the Google services Gradle plugin and that the iOS/macOS runners include the
+   Firebase initialization code produced by `flutterfire configure`.
+5. From the repository root, run:
 
    ```bash
    flutter pub get
    flutter run
    ```
 
-   The current build displays placeholder UI components until camera access and ML Kit services are implemented.
+   On the first launch the app will request camera permissions. Once granted, you can start a detection session from the
+   home screen.
 
 ## Next steps
 
-- Integrate the `camera` plugin to show the actual preview feed.
-- Connect Firebase ML Kit face and object detection services.
-- Persist trip reports and user preferences locally (Hive or SharedPreferences).
+- Expand the alert system with customizable thresholds and UI feedback for each detection.
+- Synchronize reports with a secure cloud backend for fleet monitoring scenarios.
 - Localize the interface using the language JSON files planned in the specification.
+- Add unit and widget tests that validate the ML decision logic with recorded camera frames.

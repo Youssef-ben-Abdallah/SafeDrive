@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/detection_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/camera_permission_service.dart';
+import '../widgets/camera_overlay.dart';
 
 class LensDetectionScreenArguments {
   const LensDetectionScreenArguments(this.lensDirection);
@@ -33,6 +39,7 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
   bool _isLoadingCamera = true;
   bool _isInitializing = false;
   String? _errorMessage;
+  bool _isStreamingImages = false;
 
   @override
   void initState() {
@@ -116,6 +123,8 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
     }
 
     final previousController = _controller;
+    final detectionProvider = context.read<DetectionProvider>();
+    final settings = context.read<SettingsProvider>();
     setState(() {
       _controller = null;
       _errorMessage = null;
@@ -139,11 +148,26 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
         return;
       }
 
+      await detectionProvider.startMonitoring(
+        soundAlertsEnabled: settings.soundAlertsEnabled,
+        vibrationAlertsEnabled: settings.vibrationAlertsEnabled,
+        lensDirection: widget.lensDirection,
+      );
+
+      await controller.startImageStream((image) {
+        detectionProvider.handleCameraImage(
+          image: image,
+          description: description,
+        );
+      });
+
       setState(() {
         _controller = controller;
+        _isStreamingImages = true;
       });
     } on CameraException catch (error) {
       await controller.dispose();
+      await detectionProvider.stopMonitoring();
       if (!mounted) {
         return;
       }
@@ -153,6 +177,7 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
       });
     } catch (error) {
       await controller.dispose();
+      await detectionProvider.stopMonitoring();
       if (!mounted) {
         return;
       }
@@ -175,11 +200,20 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
       return;
     }
 
+    final detectionProvider = context.read<DetectionProvider>();
+    if (_isStreamingImages) {
+      try {
+        await controller.stopImageStream();
+      } catch (_) {}
+    }
+
     setState(() {
       _controller = null;
+      _isStreamingImages = false;
     });
 
     await controller.dispose();
+    await detectionProvider.stopMonitoring();
   }
 
   Future<void> _openSettings() async {
@@ -214,6 +248,8 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
 
   @override
   void dispose() {
+    final detectionProvider = context.read<DetectionProvider>();
+    unawaited(detectionProvider.stopMonitoring());
     _controller?.dispose();
     super.dispose();
   }
@@ -280,6 +316,23 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
                     : _CameraPlaceholder(
                         message: _buildPlaceholderMessage(),
                       ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 16,
+              child: Consumer<DetectionProvider>(
+                builder: (context, detection, _) {
+                  return CameraOverlay(
+                    isMonitoring: detection.isMonitoring,
+                    statusMessage: detection.statusMessage,
+                    drowsinessCount: detection.drowsinessCount,
+                    distractionCount: detection.distractionCount,
+                    sessionStart: detection.sessionStartTime,
+                    lastAlertMessage: detection.lastAlertMessage,
+                  );
+                },
               ),
             ),
             Positioned(
