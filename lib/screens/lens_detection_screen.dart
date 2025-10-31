@@ -348,7 +348,7 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
                       vertical: 14,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
+                      color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: statusColor.withValues(alpha: 0.35),
@@ -390,7 +390,7 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 18),
                         foregroundColor: Colors.white,
                         side: BorderSide(
-                          color: Colors.white.withOpacity(0.6),
+                          color: Colors.white.withValues(alpha: 0.6),
                         ),
                       ),
                       onPressed: _openSettings,

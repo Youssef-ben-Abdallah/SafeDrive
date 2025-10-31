@@ -1,6 +1,5 @@
 import 'dart:math';
 
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 import '../models/detection_event.dart';
@@ -51,7 +50,8 @@ class FaceDetectionService {
     final DetectionEvent? yawnEvent = _detectYawning(primaryFace);
 
     if (eyesEvent != null && yawnEvent != null) {
-      final confidence = max(eyesEvent.confidence, yawnEvent.confidence).clamp(0, 1);
+      final confidence =
+          max(eyesEvent.confidence, yawnEvent.confidence).clamp(0.0, 1.0).toDouble();
       return DetectionEvent(
         timestamp: DateTime.now(),
         type: DetectionEventType.drowsiness,
@@ -77,7 +77,8 @@ class FaceDetectionService {
       return null;
     }
 
-    final confidence = ((closedThreshold - averageOpen) / closedThreshold).clamp(0, 1);
+    final confidence =
+        ((closedThreshold - averageOpen) / closedThreshold).clamp(0.0, 1.0).toDouble();
     return DetectionEvent(
       timestamp: DateTime.now(),
       type: DetectionEventType.drowsiness,
@@ -97,7 +98,8 @@ class FaceDetectionService {
       return null;
     }
 
-    final confidence = ((mouthRatio - yawnThreshold) / yawnThreshold).clamp(0, 1);
+    final confidence =
+        ((mouthRatio - yawnThreshold) / yawnThreshold).clamp(0.0, 1.0).toDouble();
     return DetectionEvent(
       timestamp: DateTime.now(),
       type: DetectionEventType.drowsiness,
@@ -119,7 +121,7 @@ class FaceDetectionService {
       return null;
     }
 
-    double verticalDistanceSum = 0;
+    double verticalDistanceSum = 0.0;
     for (var i = 0; i < verticalPairs; i++) {
       final upperPoint = upperLipBottom.points[i];
       final lowerPoint = lowerLipTop.points[i];
@@ -131,7 +133,7 @@ class FaceDetectionService {
     final upperLipTop = face.contours[FaceContourType.upperLipTop];
     final lowerLipBottom = face.contours[FaceContourType.lowerLipBottom];
 
-    double horizontalDistance = 0;
+    double horizontalDistance = 0.0;
     if (upperLipTop != null && upperLipTop.points.length >= 2) {
       horizontalDistance = (upperLipTop.points.last.x - upperLipTop.points.first.x).abs();
     } else if (lowerLipBottom != null && lowerLipBottom.points.length >= 2) {
