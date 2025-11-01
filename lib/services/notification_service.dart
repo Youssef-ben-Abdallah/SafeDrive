@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:vibration/vibration.dart';
@@ -28,10 +30,21 @@ class NotificationService {
     debugPrint('NotificationService -> $title | $body');
 
     if (sound) {
-      FlutterRingtonePlayer.playAlarm(volume: 0.8);
-      Future<void>.delayed(const Duration(seconds: 3)).then((_) {
-        FlutterRingtonePlayer.stop();
-      });
+      final FlutterRingtonePlayer ringtonePlayer = FlutterRingtonePlayer();
+
+      await ringtonePlayer.play(
+        android: AndroidSounds.alarm,
+        ios: IosSounds.alarm,
+        looping: false,
+        volume: 0.8,
+        asAlarm: true,
+      );
+
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 3)).then((_) {
+          return ringtonePlayer.stop();
+        }),
+      );
     }
 
     if (vibration && _hasVibrator) {
