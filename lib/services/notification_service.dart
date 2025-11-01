@@ -2,18 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
-import 'package:vibration/vibration.dart';
+import 'package:flutter/services.dart';
 
 class NotificationService {
   bool _isInitialized = false;
-  bool _hasVibrator = false;
-  bool _hasCustomVibrationSupport = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-
-    _hasVibrator = (await Vibration.hasVibrator()) ?? false;
-    _hasCustomVibrationSupport = (await Vibration.hasCustomVibrationsSupport()) ?? false;
     _isInitialized = true;
   }
 
@@ -47,14 +42,21 @@ class NotificationService {
       );
     }
 
-    if (vibration && _hasVibrator) {
-      if (_hasCustomVibrationSupport) {
-        await Vibration.vibrate(pattern: [0, 500, 150, 500]);
-      } else {
-        await Vibration.vibrate(duration: 800);
-      }
+    if (vibration) {
+      await _triggerVibrationPattern();
     }
   }
 
   bool get isInitialized => _isInitialized;
+
+  Future<void> _triggerVibrationPattern() async {
+    try {
+      await HapticFeedback.vibrate();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await HapticFeedback.vibrate();
+    } catch (error, stackTrace) {
+      debugPrint('NotificationService vibration failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
 }
