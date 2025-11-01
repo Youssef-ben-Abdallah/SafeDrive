@@ -135,9 +135,11 @@ class FaceDetectionService {
 
     double horizontalDistance = 0.0;
     if (upperLipTop != null && upperLipTop.points.length >= 2) {
-      horizontalDistance = (upperLipTop.points.last.x - upperLipTop.points.first.x).abs();
+      horizontalDistance =
+          (upperLipTop.points.last.x - upperLipTop.points.first.x).abs().toDouble();
     } else if (lowerLipBottom != null && lowerLipBottom.points.length >= 2) {
-      horizontalDistance = (lowerLipBottom.points.last.x - lowerLipBottom.points.first.x).abs();
+      horizontalDistance =
+          (lowerLipBottom.points.last.x - lowerLipBottom.points.first.x).abs().toDouble();
     }
 
     if (horizontalDistance == 0) {
