@@ -2,6 +2,11 @@ import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart
 
 import '../models/detection_event.dart';
 
+enum DetectionScene {
+  driver,
+  road,
+}
+
 class ObjectDetectionService {
   ObjectDetectionService()
       : _objectDetector = ObjectDetector(
@@ -9,12 +14,14 @@ class ObjectDetectionService {
             mode: DetectionMode.stream,
             classifyObjects: true,
             multipleObjects: true,
+            classificationConfidenceThreshold: _classificationConfidenceThreshold,
           ),
         );
 
   final ObjectDetector _objectDetector;
   bool _isInitialized = false;
-  static const double _minConfidenceThreshold = 0.55;
+  static const double _classificationConfidenceThreshold = 0.45;
+  static const double _minConfidenceThreshold = 0.45;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -28,7 +35,10 @@ class ObjectDetectionService {
     _isInitialized = false;
   }
 
-  Future<DetectionEvent?> processImage(InputImage image) async {
+  Future<DetectionEvent?> processImage(
+    InputImage image, {
+    required DetectionScene scene,
+  }) async {
     if (!_isInitialized) {
       return null;
     }
@@ -53,6 +63,7 @@ class ObjectDetectionService {
           originalLabel: category.text,
           normalizedLabel: normalizedLabel,
           confidence: confidence,
+          scene: scene,
         );
 
         if (event != null) {
@@ -68,8 +79,9 @@ class ObjectDetectionService {
     required String originalLabel,
     required String normalizedLabel,
     required double confidence,
+    required DetectionScene scene,
   }) {
-    if (_matchesStopSign(normalizedLabel)) {
+    if (scene == DetectionScene.road && _matchesStopSign(normalizedLabel)) {
       return DetectionEvent(
         timestamp: DateTime.now(),
         type: DetectionEventType.regulation,
@@ -78,13 +90,13 @@ class ObjectDetectionService {
         label: 'Stop sign',
         metadata: const {
           'tag': 'stop_sign',
-          'minObservations': 3,
-          'minDurationMs': 1200,
+          'minObservations': 2,
+          'minDurationMs': 800,
         },
       );
     }
 
-    if (_matchesTrafficLight(normalizedLabel)) {
+    if (scene == DetectionScene.road && _matchesTrafficLight(normalizedLabel)) {
       return _buildTrafficLightEvent(
         label: originalLabel,
         confidence: confidence,
@@ -92,21 +104,24 @@ class ObjectDetectionService {
     }
 
     if (_matchesPhone(normalizedLabel)) {
+      final bool isDriverScene = scene == DetectionScene.driver;
       return DetectionEvent(
         timestamp: DateTime.now(),
         type: DetectionEventType.distraction,
         confidence: confidence,
-        reason: 'Phone detected in rear camera view',
+        reason: isDriverScene
+            ? 'Phone detected near driver — possible distraction.'
+            : 'Phone detected in rear camera view',
         label: 'Phone',
-        metadata: const {
-          'tag': 'phone_distraction',
-          'minObservations': 2,
-          'minDurationMs': 800,
+        metadata: {
+          'tag': isDriverScene ? 'phone_driver' : 'phone_distraction',
+          'minObservations': isDriverScene ? 1 : 2,
+          'minDurationMs': isDriverScene ? 500 : 800,
         },
       );
     }
 
-    if (_matchesHazard(normalizedLabel)) {
+    if (scene == DetectionScene.road && _matchesHazard(normalizedLabel)) {
       return DetectionEvent(
         timestamp: DateTime.now(),
         type: DetectionEventType.distraction,

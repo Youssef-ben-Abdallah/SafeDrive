@@ -103,6 +103,7 @@ class DetectionProvider extends ChangeNotifier {
     await _notificationService.initialize();
     if (lensDirection == CameraLensDirection.front) {
       await _faceDetectionService.initialize();
+      await _objectDetectionService.initialize();
     } else {
       await _objectDetectionService.initialize();
     }
@@ -181,9 +182,17 @@ class DetectionProvider extends ChangeNotifier {
 
       DetectionEvent? event;
       if (_activeLensDirection == CameraLensDirection.front) {
-        event = await _faceDetectionService.processImage(inputImage);
+        final faceEvent = await _faceDetectionService.processImage(inputImage);
+        final objectEvent = await _objectDetectionService.processImage(
+          inputImage,
+          scene: DetectionScene.driver,
+        );
+        event = _selectBestEvent(faceEvent, objectEvent);
       } else {
-        event = await _objectDetectionService.processImage(inputImage);
+        event = await _objectDetectionService.processImage(
+          inputImage,
+          scene: DetectionScene.road,
+        );
       }
 
       if (event != null) {
@@ -351,6 +360,20 @@ class DetectionProvider extends ChangeNotifier {
     _pendingEvents.removeWhere(
       (_, state) => now.difference(state.lastSeen) > _pendingEventExpiry,
     );
+  }
+
+  DetectionEvent? _selectBestEvent(
+    DetectionEvent? primary,
+    DetectionEvent? secondary,
+  ) {
+    if (primary == null) {
+      return secondary;
+    }
+    if (secondary == null) {
+      return primary;
+    }
+
+    return primary.confidence >= secondary.confidence ? primary : secondary;
   }
 
   bool _requiresStabilization(DetectionEvent event) {
