@@ -8,6 +8,8 @@ class CameraOverlay extends StatelessWidget {
     required this.drowsinessCount,
     required this.distractionCount,
     required this.regulationCount,
+    required this.stopSignCount,
+    required this.trafficSignalCount,
     required this.sessionStart,
     required this.lastAlertMessage,
   });
@@ -17,6 +19,8 @@ class CameraOverlay extends StatelessWidget {
   final int drowsinessCount;
   final int distractionCount;
   final int regulationCount;
+  final int stopSignCount;
+  final int trafficSignalCount;
   final DateTime? sessionStart;
   final String? lastAlertMessage;
 
@@ -97,6 +101,18 @@ class CameraOverlay extends StatelessWidget {
                 label: 'Regulation',
                 value: regulationCount,
                 color: Colors.lightBlueAccent,
+              ),
+              _buildStatChip(
+                context,
+                label: 'Stop signs',
+                value: stopSignCount,
+                color: Colors.purpleAccent,
+              ),
+              _buildStatChip(
+                context,
+                label: 'Traffic lights',
+                value: trafficSignalCount,
+                color: Colors.tealAccent,
               ),
             ],
           ),

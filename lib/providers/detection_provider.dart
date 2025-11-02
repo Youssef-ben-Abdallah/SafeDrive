@@ -45,9 +45,11 @@ class DetectionProvider extends ChangeNotifier {
   final List<DetectionEvent> _sessionEvents = [];
   final List<DetectionEvent> _alertLog = [];
   final List<TripReport> _reports = [];
+  final Map<String, _PendingEventState> _pendingEvents = {};
 
   static const Duration _alertCooldown = Duration(seconds: 5);
   static const int _maxAlertLogEntries = 200;
+  static const Duration _pendingEventExpiry = Duration(seconds: 2);
 
   bool get isInitializing => _isInitializing;
   bool get isMonitoring => _isMonitoring;
@@ -70,6 +72,15 @@ class DetectionProvider extends ChangeNotifier {
 
   int get regulationCount => _sessionEvents
       .where((event) => event.type == DetectionEventType.regulation)
+      .length;
+
+  int get stopSignCount =>
+      _sessionEvents.where((event) => event.metadata?['tag'] == 'stop_sign').length;
+
+  int get trafficSignalCount => _sessionEvents
+      .where((event) =>
+          (event.metadata?['tag'] as String?)?.startsWith('traffic_light') ??
+          false)
       .length;
 
   Future<void> startMonitoring({
@@ -103,6 +114,7 @@ class DetectionProvider extends ChangeNotifier {
     _sessionStartTime = DateTime.now();
     _lastAlertTimestamp = null;
     _activeLensDirection = lensDirection;
+    _pendingEvents.clear();
 
     _isInitializing = false;
     _isMonitoring = true;
@@ -137,6 +149,7 @@ class DetectionProvider extends ChangeNotifier {
     _statusMessage = 'Detection paused.';
     _lastAlertMessage = null;
     _lastAlertTimestamp = null;
+    _pendingEvents.clear();
     notifyListeners();
   }
 
@@ -203,7 +216,43 @@ class DetectionProvider extends ChangeNotifier {
   }
 
   void _registerEvent(DetectionEvent event) {
+    _expireStalePendingEvents();
+
+    if (_requiresStabilization(event)) {
+      final key = _pendingEventKey(event);
+      final existingState = _pendingEvents[key];
+      final pendingState = existingState ?? _PendingEventState(event);
+      if (existingState == null) {
+        _pendingEvents[key] = pendingState;
+      } else {
+        pendingState.update(event);
+      }
+
+      final int? requiredObservations = _requiredObservations(event);
+      final Duration? requiredDuration = _requiredDuration(event);
+      final bool hasObservationSupport = requiredObservations == null ||
+          pendingState.observationCount >= requiredObservations;
+      final bool hasDurationSupport = requiredDuration == null ||
+          pendingState.elapsed >= requiredDuration;
+
+      if (hasObservationSupport && hasDurationSupport) {
+        _pendingEvents.remove(key);
+        _commitEvent(pendingState.bestEvent);
+      }
+      return;
+    }
+
+    _commitEvent(event);
+  }
+
+  void _commitEvent(DetectionEvent event) {
     final now = event.timestamp;
+
+    if (_activeLensDirection == CameraLensDirection.front &&
+        event.type == DetectionEventType.regulation) {
+      return;
+    }
+
     if (_lastAlertTimestamp != null &&
         now.difference(_lastAlertTimestamp!) < _alertCooldown) {
       return;
@@ -242,6 +291,8 @@ class DetectionProvider extends ChangeNotifier {
     if (_activeLensDirection == null) {
       return;
     }
+
+    _expireStalePendingEvents();
 
     final DateTime? lastAlert = _lastAlertTimestamp;
     final bool canUpdateIdle = lastAlert == null ||
@@ -291,10 +342,87 @@ class DetectionProvider extends ChangeNotifier {
     );
   }
 
+  void _expireStalePendingEvents() {
+    if (_pendingEvents.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+    _pendingEvents.removeWhere(
+      (_, state) => now.difference(state.lastSeen) > _pendingEventExpiry,
+    );
+  }
+
+  bool _requiresStabilization(DetectionEvent event) {
+    final metadata = event.metadata;
+    if (metadata == null) {
+      return false;
+    }
+
+    return metadata.containsKey('minObservations') ||
+        metadata.containsKey('minDurationMs');
+  }
+
+  int? _requiredObservations(DetectionEvent event) {
+    final value = event.metadata?['minObservations'];
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return null;
+  }
+
+  Duration? _requiredDuration(DetectionEvent event) {
+    final value = event.metadata?['minDurationMs'];
+    if (value is int) {
+      return Duration(milliseconds: value);
+    }
+    if (value is num) {
+      return Duration(milliseconds: value.toInt());
+    }
+    return null;
+  }
+
+  String _pendingEventKey(DetectionEvent event) {
+    final buffer = StringBuffer(event.type.name);
+    final tag = event.metadata?['tag'];
+    if (tag is String && tag.isNotEmpty) {
+      buffer.write('::$tag');
+    } else {
+      buffer.write('::${event.reason}');
+    }
+    return buffer.toString();
+  }
+
   @override
   void dispose() {
     _faceDetectionService.dispose();
     _objectDetectionService.dispose();
     super.dispose();
+  }
+}
+
+class _PendingEventState {
+  _PendingEventState(DetectionEvent event)
+      : bestEvent = event,
+        firstSeen = event.timestamp,
+        lastSeen = event.timestamp,
+        observationCount = 1;
+
+  DetectionEvent bestEvent;
+  final DateTime firstSeen;
+  DateTime lastSeen;
+  int observationCount;
+
+  Duration get elapsed => lastSeen.difference(firstSeen);
+
+  void update(DetectionEvent event) {
+    observationCount += 1;
+    lastSeen = event.timestamp;
+    if (event.confidence >= bestEvent.confidence) {
+      bestEvent = event;
+    }
   }
 }

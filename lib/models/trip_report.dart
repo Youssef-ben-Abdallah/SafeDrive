@@ -24,6 +24,16 @@ class TripReport {
 
   int get totalAlerts => events.length;
 
+  int get stopSignCount => events
+      .where((event) => event.metadata?['tag'] == 'stop_sign')
+      .length;
+
+  int get trafficSignalCount => events
+      .where((event) =>
+          (event.metadata?['tag'] as String?)?.startsWith('traffic_light') ??
+          false)
+      .length;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'startTime': startTime.toIso8601String(),
         'endTime': endTime.toIso8601String(),

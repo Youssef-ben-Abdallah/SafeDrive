@@ -330,6 +330,8 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
                     drowsinessCount: detection.drowsinessCount,
                     distractionCount: detection.distractionCount,
                     regulationCount: detection.regulationCount,
+                    stopSignCount: detection.stopSignCount,
+                    trafficSignalCount: detection.trafficSignalCount,
                     sessionStart: detection.sessionStartTime,
                     lastAlertMessage: detection.lastAlertMessage,
                   );
