@@ -1,4 +1,4 @@
-enum DetectionEventType { drowsiness, distraction, regulation }
+enum DetectionEventType { drowsiness, distraction, regulation, posture, emergency }
 
 class DetectionEvent {
   DetectionEvent({
@@ -25,6 +25,10 @@ class DetectionEvent {
         return 'Distraction';
       case DetectionEventType.regulation:
         return 'Regulation';
+      case DetectionEventType.posture:
+        return 'Posture';
+      case DetectionEventType.emergency:
+        return 'Emergency';
     }
   }
 

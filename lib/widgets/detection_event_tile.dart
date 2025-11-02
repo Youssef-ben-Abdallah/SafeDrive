@@ -34,6 +34,10 @@ class DetectionEventTile extends StatelessWidget {
         return Icons.phone_android;
       case DetectionEventType.regulation:
         return Icons.rule;
+      case DetectionEventType.posture:
+        return Icons.accessibility_new;
+      case DetectionEventType.emergency:
+        return Icons.warning_amber;
     }
   }
 
@@ -45,6 +49,10 @@ class DetectionEventTile extends StatelessWidget {
         return Colors.orangeAccent;
       case DetectionEventType.regulation:
         return Colors.lightBlueAccent;
+      case DetectionEventType.posture:
+        return Colors.purpleAccent;
+      case DetectionEventType.emergency:
+        return Colors.red;
     }
   }
 

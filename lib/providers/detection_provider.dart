@@ -8,9 +8,13 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import '../models/detection_event.dart';
 import '../models/trip_report.dart';
 import '../services/alert_log_service.dart';
+import '../services/emergency_dispatch_service.dart';
 import '../services/face_detection_service.dart';
+import '../services/motion_detection_service.dart';
 import '../services/notification_service.dart';
 import '../services/object_detection_service.dart';
+import '../services/pose_detection_service.dart';
+import '../services/selfie_segmentation_service.dart';
 
 class _DetectionProfile {
   const _DetectionProfile({
@@ -65,10 +69,14 @@ final _DetectionProfile _frontCameraProfile = _DetectionProfile(
   allowedTypes: {
     DetectionEventType.drowsiness,
     DetectionEventType.distraction,
+    DetectionEventType.posture,
+    DetectionEventType.emergency,
   },
   allowedTagPatterns: <Pattern>[
     RegExp(r'^drowsiness_'),
     RegExp(r'^phone_driver$'),
+    RegExp(r'^pose_'),
+    RegExp(r'^severe_motion$'),
   ],
   startStatusMessage: 'Monitoring driver attentiveness…',
   idleStatusMessage: 'Monitoring active — no signs of drowsiness.',
@@ -81,11 +89,13 @@ final _DetectionProfile _rearCameraProfile = _DetectionProfile(
   allowedTypes: {
     DetectionEventType.regulation,
     DetectionEventType.distraction,
+    DetectionEventType.emergency,
   },
   allowedTagPatterns: <Pattern>[
     RegExp(r'^stop_sign$'),
     RegExp(r'^traffic_light_'),
     RegExp(r'^road_hazard$'),
+    RegExp(r'^severe_motion$'),
   ],
   startStatusMessage: 'Monitoring road environment for hazards…',
   idleStatusMessage: 'Monitoring active — road environment clear.',
@@ -97,11 +107,23 @@ class DetectionProvider extends ChangeNotifier {
     ObjectDetectionService? objectDetectionService,
     NotificationService? notificationService,
     AlertLogService? alertLogService,
+    PoseDetectionService? poseDetectionService,
+    SelfieSegmentationService? selfieSegmentationService,
+    MotionDetectionService? motionDetectionService,
+    EmergencyDispatchService? emergencyDispatchService,
   })  : _faceDetectionService = faceDetectionService ?? FaceDetectionService(),
         _objectDetectionService =
             objectDetectionService ?? ObjectDetectionService(),
         _notificationService = notificationService ?? NotificationService(),
-        _alertLogService = alertLogService ?? AlertLogService() {
+        _alertLogService = alertLogService ?? AlertLogService(),
+        _poseDetectionService =
+            poseDetectionService ?? PoseDetectionService(),
+        _selfieSegmentationService =
+            selfieSegmentationService ?? SelfieSegmentationService(),
+        _motionDetectionService =
+            motionDetectionService ?? MotionDetectionService(),
+        _emergencyDispatchService =
+            emergencyDispatchService ?? EmergencyDispatchService() {
     unawaited(_restorePersistedData());
   }
 
@@ -109,6 +131,10 @@ class DetectionProvider extends ChangeNotifier {
   final ObjectDetectionService _objectDetectionService;
   final NotificationService _notificationService;
   final AlertLogService _alertLogService;
+  final PoseDetectionService _poseDetectionService;
+  final SelfieSegmentationService _selfieSegmentationService;
+  final MotionDetectionService _motionDetectionService;
+  final EmergencyDispatchService _emergencyDispatchService;
 
   bool _isInitializing = false;
   bool _isMonitoring = false;
@@ -121,6 +147,7 @@ class DetectionProvider extends ChangeNotifier {
   DateTime? _lastAlertTimestamp;
   CameraLensDirection? _activeLensDirection;
   _DetectionProfile? _activeProfile;
+  SegmentationAnalysis? _lastSegmentationAnalysis;
 
   final List<DetectionEvent> _sessionEvents = [];
   final List<DetectionEvent> _alertLog = [];
@@ -130,6 +157,8 @@ class DetectionProvider extends ChangeNotifier {
   static const Duration _alertCooldown = Duration(seconds: 5);
   static const int _maxAlertLogEntries = 200;
   static const Duration _pendingEventExpiry = Duration(seconds: 2);
+  static const double _minSegmentationCoverage = 0.06;
+  static const double _minSegmentationConfidence = 0.2;
 
   bool get isInitializing => _isInitializing;
   bool get isMonitoring => _isMonitoring;
@@ -142,6 +171,8 @@ class DetectionProvider extends ChangeNotifier {
   List<DetectionEvent> get alertLog => List.unmodifiable(_alertLog);
   DetectionEvent? get latestEvent =>
       _sessionEvents.isEmpty ? null : _sessionEvents.first;
+  SegmentationAnalysis? get lastSegmentationAnalysis =>
+      _lastSegmentationAnalysis;
 
   _DetectionProfile _profileForLens(CameraLensDirection lensDirection) {
     if (lensDirection == CameraLensDirection.front) {
@@ -160,6 +191,14 @@ class DetectionProvider extends ChangeNotifier {
 
   int get regulationCount => _sessionEvents
       .where((event) => event.type == DetectionEventType.regulation)
+      .length;
+
+  int get postureCount => _sessionEvents
+      .where((event) => event.type == DetectionEventType.posture)
+      .length;
+
+  int get emergencyCount => _sessionEvents
+      .where((event) => event.type == DetectionEventType.emergency)
       .length;
 
   int get stopSignCount =>
@@ -192,12 +231,23 @@ class DetectionProvider extends ChangeNotifier {
     _activeProfile = profile;
 
     await _notificationService.initialize();
+    await _emergencyDispatchService.initialize();
 
     if (profile.useFaceDetection) {
       await _faceDetectionService.initialize();
     } else {
       await _faceDetectionService.dispose();
     }
+
+    if (profile.scene == DetectionScene.driver) {
+      await _poseDetectionService.initialize();
+      await _selfieSegmentationService.initialize();
+    } else {
+      await _poseDetectionService.dispose();
+      await _selfieSegmentationService.dispose();
+    }
+
+    await _motionDetectionService.start(onEvent: _handleMotionEvent);
 
     if (profile.useObjectDetection) {
       await _objectDetectionService.initialize();
@@ -213,6 +263,7 @@ class DetectionProvider extends ChangeNotifier {
     _lastAlertTimestamp = null;
     _activeLensDirection = lensDirection;
     _pendingEvents.clear();
+    _lastSegmentationAnalysis = null;
 
     _isInitializing = false;
     _isMonitoring = true;
@@ -224,6 +275,10 @@ class DetectionProvider extends ChangeNotifier {
     if (!_isMonitoring && !_isInitializing) {
       return;
     }
+
+    await _motionDetectionService.stop();
+    await _poseDetectionService.dispose();
+    await _selfieSegmentationService.dispose();
 
     _isMonitoring = false;
     _isInitializing = false;
@@ -247,6 +302,7 @@ class DetectionProvider extends ChangeNotifier {
     _lastAlertMessage = null;
     _lastAlertTimestamp = null;
     _pendingEvents.clear();
+    _lastSegmentationAnalysis = null;
     notifyListeners();
   }
 
@@ -281,10 +337,22 @@ class DetectionProvider extends ChangeNotifier {
 
       final inputImage = _convertToInputImage(image, description);
       final List<DetectionEvent> allowedEvents = [];
+      SegmentationAnalysis? segmentationAnalysis;
+
+      if (profile.scene == DetectionScene.driver &&
+          _selfieSegmentationService.isInitialized) {
+        segmentationAnalysis =
+            await _selfieSegmentationService.processImage(inputImage);
+        if (segmentationAnalysis != null) {
+          _lastSegmentationAnalysis = segmentationAnalysis;
+        }
+      }
 
       if (profile.useFaceDetection) {
         final faceEvent = await _faceDetectionService.processImage(inputImage);
-        if (faceEvent != null && profile.allowsEvent(faceEvent)) {
+        if (faceEvent != null &&
+            profile.allowsEvent(faceEvent) &&
+            _segmentationAllowsEvent(segmentationAnalysis)) {
           allowedEvents.add(faceEvent);
         }
       }
@@ -296,6 +364,19 @@ class DetectionProvider extends ChangeNotifier {
         );
         if (objectEvent != null && profile.allowsEvent(objectEvent)) {
           allowedEvents.add(objectEvent);
+        }
+      }
+
+      if (profile.scene == DetectionScene.driver &&
+          _poseDetectionService.isInitialized) {
+        final poseEvent = await _poseDetectionService.processImage(
+          inputImage,
+          segmentationCoverage:
+              segmentationAnalysis?.foregroundCoverage ??
+                  _lastSegmentationAnalysis?.foregroundCoverage,
+        );
+        if (poseEvent != null && profile.allowsEvent(poseEvent)) {
+          allowedEvents.add(poseEvent);
         }
       }
 
@@ -402,6 +483,12 @@ class DetectionProvider extends ChangeNotifier {
       ),
     );
 
+    if (event.type == DetectionEventType.emergency) {
+      unawaited(
+        _emergencyDispatchService.dispatchEmergencyAlert(event: event),
+      );
+    }
+
     unawaited(_alertLogService.persistAlerts(_alertLog));
   }
 
@@ -470,6 +557,27 @@ class DetectionProvider extends ChangeNotifier {
     );
   }
 
+  bool _segmentationAllowsEvent(SegmentationAnalysis? analysis) {
+    if (!_selfieSegmentationService.isInitialized) {
+      return true;
+    }
+
+    final data = analysis ?? _lastSegmentationAnalysis;
+    if (data == null) {
+      return true;
+    }
+
+    return data.foregroundCoverage >= _minSegmentationCoverage ||
+        data.averageConfidence >= _minSegmentationConfidence;
+  }
+
+  void _handleMotionEvent(DetectionEvent event) {
+    if (!_isMonitoring) {
+      return;
+    }
+    _registerEvent(event);
+  }
+
   DetectionEvent? _selectBestEvent(
     DetectionEvent? primary,
     DetectionEvent? secondary,
@@ -531,6 +639,10 @@ class DetectionProvider extends ChangeNotifier {
   void dispose() {
     _faceDetectionService.dispose();
     _objectDetectionService.dispose();
+    _poseDetectionService.dispose();
+    _selfieSegmentationService.dispose();
+    _motionDetectionService.stop();
+    _emergencyDispatchService.dispose();
     super.dispose();
   }
 }
