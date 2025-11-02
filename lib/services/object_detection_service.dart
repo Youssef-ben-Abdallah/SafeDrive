@@ -14,13 +14,12 @@ class ObjectDetectionService {
             mode: DetectionMode.stream,
             classifyObjects: true,
             multipleObjects: true,
-            classificationConfidenceThreshold: _classificationConfidenceThreshold,
+            classificationConfidenceThreshold: _minConfidenceThreshold,
           ),
         );
 
   final ObjectDetector _objectDetector;
   bool _isInitialized = false;
-  static const double _classificationConfidenceThreshold = 0.45;
   static const double _minConfidenceThreshold = 0.45;
 
   Future<void> initialize() async {
