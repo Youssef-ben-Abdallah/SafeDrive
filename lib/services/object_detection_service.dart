@@ -14,7 +14,6 @@ class ObjectDetectionService {
             mode: DetectionMode.stream,
             classifyObjects: true,
             multipleObjects: true,
-            classificationConfidenceThreshold: _minConfidenceThreshold,
           ),
         );
 
