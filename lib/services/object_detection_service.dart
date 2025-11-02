@@ -117,12 +117,17 @@ class ObjectDetectionService {
       state = 'unknown';
     }
 
-    final reason = switch (state) {
-      'red' => 'Red light detected — stop immediately.',
-      'yellow' => 'Yellow light detected — prepare to stop safely.',
-      'green' => 'Traffic light detected — proceed only when the way is clear.',
-      _ => 'Traffic signal detected — follow road regulations.',
-    };
+    String reason;
+    if (state == 'red') {
+      reason = 'Red light detected — stop immediately.';
+    } else if (state == 'yellow') {
+      reason = 'Yellow light detected — prepare to stop safely.';
+    } else if (state == 'green') {
+      reason =
+          'Traffic light detected — proceed only when the way is clear.';
+    } else {
+      reason = 'Traffic signal detected — follow road regulations.';
+    }
 
     return DetectionEvent(
       timestamp: DateTime.now(),
