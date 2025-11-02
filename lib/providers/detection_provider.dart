@@ -68,6 +68,10 @@ class DetectionProvider extends ChangeNotifier {
       .where((event) => event.type == DetectionEventType.distraction)
       .length;
 
+  int get regulationCount => _sessionEvents
+      .where((event) => event.type == DetectionEventType.regulation)
+      .length;
+
   Future<void> startMonitoring({
     required bool soundAlertsEnabled,
     required bool vibrationAlertsEnabled,
@@ -249,7 +253,7 @@ class DetectionProvider extends ChangeNotifier {
 
     final idleMessage = _activeLensDirection == CameraLensDirection.front
         ? 'Monitoring active — no signs of drowsiness.'
-        : 'Monitoring active — surroundings clear.';
+        : 'Monitoring active — surroundings and regulations clear.';
 
     if (_statusMessage != idleMessage) {
       _statusMessage = idleMessage;
