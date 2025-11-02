@@ -58,7 +58,7 @@ class _DetectionProfile {
   }
 }
 
-const _DetectionProfile _frontCameraProfile = _DetectionProfile(
+final _DetectionProfile _frontCameraProfile = _DetectionProfile(
   scene: DetectionScene.driver,
   useFaceDetection: true,
   useObjectDetection: true,
@@ -74,7 +74,7 @@ const _DetectionProfile _frontCameraProfile = _DetectionProfile(
   idleStatusMessage: 'Monitoring active — no signs of drowsiness.',
 );
 
-const _DetectionProfile _rearCameraProfile = _DetectionProfile(
+final _DetectionProfile _rearCameraProfile = _DetectionProfile(
   scene: DetectionScene.road,
   useFaceDetection: false,
   useObjectDetection: true,
