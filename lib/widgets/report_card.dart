@@ -52,9 +52,23 @@ class ReportCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 _buildStatRow(
                   context,
+                  label: 'Posture alerts',
+                  value: report.postureCount,
+                  color: Colors.deepPurpleAccent,
+                ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
+                  label: 'Emergency alerts',
+                  value: report.emergencyCount,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
                   label: 'Stop signs observed',
                   value: report.stopSignCount,
-                  color: Colors.purpleAccent,
+                  color: Colors.indigoAccent,
                 ),
                 const SizedBox(height: 8),
                 _buildStatRow(
@@ -107,6 +121,10 @@ class ReportCard extends StatelessWidget {
         return Icons.phone_android;
       case DetectionEventType.regulation:
         return Icons.rule;
+      case DetectionEventType.posture:
+        return Icons.accessibility_new;
+      case DetectionEventType.emergency:
+        return Icons.warning_amber;
     }
   }
 
@@ -118,6 +136,10 @@ class ReportCard extends StatelessWidget {
         return Colors.orangeAccent;
       case DetectionEventType.regulation:
         return Colors.lightBlueAccent;
+      case DetectionEventType.posture:
+        return Colors.deepPurpleAccent;
+      case DetectionEventType.emergency:
+        return Colors.red;
     }
   }
 

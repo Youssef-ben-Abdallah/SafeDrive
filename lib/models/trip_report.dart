@@ -22,6 +22,12 @@ class TripReport {
   int get regulationCount =>
       events.where((event) => event.type == DetectionEventType.regulation).length;
 
+  int get postureCount =>
+      events.where((event) => event.type == DetectionEventType.posture).length;
+
+  int get emergencyCount =>
+      events.where((event) => event.type == DetectionEventType.emergency).length;
+
   int get totalAlerts => events.length;
 
   int get stopSignCount => events
