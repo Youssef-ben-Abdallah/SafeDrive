@@ -42,6 +42,13 @@ class ReportCard extends StatelessWidget {
                   value: report.distractionCount,
                   color: Colors.orangeAccent,
                 ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
+                  label: 'Regulation alerts',
+                  value: report.regulationCount,
+                  color: Colors.lightBlueAccent,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Timeline',
@@ -58,12 +65,8 @@ class ReportCard extends StatelessWidget {
                     (event) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
-                        event.type == DetectionEventType.drowsiness
-                            ? Icons.bedtime
-                            : Icons.phone_android,
-                        color: event.type == DetectionEventType.drowsiness
-                            ? Colors.redAccent
-                            : Colors.orangeAccent,
+                        _iconForEventType(event.type),
+                        color: _colorForEventType(event.type),
                       ),
                       title: Text(event.typeLabel),
                       subtitle: Text(
@@ -80,6 +83,28 @@ class ReportCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  IconData _iconForEventType(DetectionEventType type) {
+    switch (type) {
+      case DetectionEventType.drowsiness:
+        return Icons.bedtime;
+      case DetectionEventType.distraction:
+        return Icons.phone_android;
+      case DetectionEventType.regulation:
+        return Icons.rule;
+    }
+  }
+
+  Color _colorForEventType(DetectionEventType type) {
+    switch (type) {
+      case DetectionEventType.drowsiness:
+        return Colors.redAccent;
+      case DetectionEventType.distraction:
+        return Colors.orangeAccent;
+      case DetectionEventType.regulation:
+        return Colors.lightBlueAccent;
+    }
   }
 
   Widget _buildStatRow(

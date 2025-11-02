@@ -19,6 +19,9 @@ class TripReport {
   int get distractionCount =>
       events.where((event) => event.type == DetectionEventType.distraction).length;
 
+  int get regulationCount =>
+      events.where((event) => event.type == DetectionEventType.regulation).length;
+
   int get totalAlerts => events.length;
 
   Map<String, dynamic> toJson() => <String, dynamic>{

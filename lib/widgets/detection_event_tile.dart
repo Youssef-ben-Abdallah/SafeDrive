@@ -9,18 +9,14 @@ class DetectionEventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = event.type == DetectionEventType.drowsiness
-        ? Colors.redAccent
-        : Colors.orangeAccent;
+    final color = _colorForEventType(event.type);
 
     return Card(
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: color,
           child: Icon(
-            event.type == DetectionEventType.drowsiness
-                ? Icons.bedtime
-                : Icons.phone_android,
+            _iconForEventType(event.type),
             color: Colors.white,
           ),
         ),
@@ -28,6 +24,28 @@ class DetectionEventTile extends StatelessWidget {
         subtitle: Text(_buildSubtitle(event)),
       ),
     );
+  }
+
+  IconData _iconForEventType(DetectionEventType type) {
+    switch (type) {
+      case DetectionEventType.drowsiness:
+        return Icons.bedtime;
+      case DetectionEventType.distraction:
+        return Icons.phone_android;
+      case DetectionEventType.regulation:
+        return Icons.rule;
+    }
+  }
+
+  Color _colorForEventType(DetectionEventType type) {
+    switch (type) {
+      case DetectionEventType.drowsiness:
+        return Colors.redAccent;
+      case DetectionEventType.distraction:
+        return Colors.orangeAccent;
+      case DetectionEventType.regulation:
+        return Colors.lightBlueAccent;
+    }
   }
 
   String _buildSubtitle(DetectionEvent event) {
