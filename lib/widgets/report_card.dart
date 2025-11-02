@@ -49,6 +49,20 @@ class ReportCard extends StatelessWidget {
                   value: report.regulationCount,
                   color: Colors.lightBlueAccent,
                 ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
+                  label: 'Stop signs observed',
+                  value: report.stopSignCount,
+                  color: Colors.purpleAccent,
+                ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  context,
+                  label: 'Traffic lights observed',
+                  value: report.trafficSignalCount,
+                  color: Colors.tealAccent,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Timeline',
@@ -68,7 +82,7 @@ class ReportCard extends StatelessWidget {
                         _iconForEventType(event.type),
                         color: _colorForEventType(event.type),
                       ),
-                      title: Text(event.typeLabel),
+                      title: Text(event.label ?? event.typeLabel),
                       subtitle: Text(
                         '${event.reason}\n'
                         'Confidence ${(event.confidence * 100).toStringAsFixed(0)}% • '

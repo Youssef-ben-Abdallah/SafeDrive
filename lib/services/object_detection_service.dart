@@ -14,6 +14,7 @@ class ObjectDetectionService {
 
   final ObjectDetector _objectDetector;
   bool _isInitialized = false;
+  static const double _minConfidenceThreshold = 0.55;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -44,6 +45,10 @@ class ObjectDetectionService {
         final normalizedLabel = category.text.toLowerCase();
         final confidence = category.confidence.clamp(0.0, 1.0).toDouble();
 
+        if (confidence < _minConfidenceThreshold) {
+          continue;
+        }
+
         final event = _eventForLabel(
           originalLabel: category.text,
           normalizedLabel: normalizedLabel,
@@ -70,6 +75,12 @@ class ObjectDetectionService {
         type: DetectionEventType.regulation,
         confidence: confidence,
         reason: 'Stop sign detected — ensure a complete stop.',
+        label: 'Stop sign',
+        metadata: const {
+          'tag': 'stop_sign',
+          'minObservations': 3,
+          'minDurationMs': 1200,
+        },
       );
     }
 
@@ -86,6 +97,12 @@ class ObjectDetectionService {
         type: DetectionEventType.distraction,
         confidence: confidence,
         reason: 'Phone detected in rear camera view',
+        label: 'Phone',
+        metadata: const {
+          'tag': 'phone_distraction',
+          'minObservations': 2,
+          'minDurationMs': 800,
+        },
       );
     }
 
@@ -95,6 +112,13 @@ class ObjectDetectionService {
         type: DetectionEventType.distraction,
         confidence: confidence,
         reason: 'Potential hazard detected ($originalLabel)',
+        label: originalLabel,
+        metadata: {
+          'tag': 'road_hazard',
+          'detectedLabel': originalLabel,
+          'minObservations': 2,
+          'minDurationMs': 800,
+        },
       );
     }
 
@@ -129,11 +153,19 @@ class ObjectDetectionService {
       reason = 'Traffic signal detected — follow road regulations.';
     }
 
+    final friendlyLabel = 'Traffic light${state == 'unknown' ? '' : ' ($state)'}';
+
     return DetectionEvent(
       timestamp: DateTime.now(),
       type: DetectionEventType.regulation,
       confidence: confidence,
       reason: reason,
+      label: friendlyLabel,
+      metadata: {
+        'tag': 'traffic_light_$state',
+        'minObservations': 2,
+        'minDurationMs': 800,
+      },
     );
   }
 

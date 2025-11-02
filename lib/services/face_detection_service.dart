@@ -57,6 +57,10 @@ class FaceDetectionService {
         type: DetectionEventType.drowsiness,
         confidence: confidence,
         reason: 'Driver appears drowsy (eyes closed & yawning)',
+        label: 'Drowsiness (eyes & yawn)',
+        metadata: const {
+          'tag': 'drowsiness_combined',
+        },
       );
     }
 
@@ -84,6 +88,10 @@ class FaceDetectionService {
       type: DetectionEventType.drowsiness,
       confidence: confidence,
       reason: 'Driver appears drowsy (eyes closed)',
+      label: 'Eyes closed',
+      metadata: const {
+        'tag': 'drowsiness_eyes_closed',
+      },
     );
   }
 
@@ -105,6 +113,10 @@ class FaceDetectionService {
       type: DetectionEventType.drowsiness,
       confidence: confidence,
       reason: 'Driver appears fatigued (yawning)',
+      label: 'Yawning',
+      metadata: const {
+        'tag': 'drowsiness_yawn',
+      },
     );
   }
 
