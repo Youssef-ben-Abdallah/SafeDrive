@@ -1,3 +1,4 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 class CameraOverlay extends StatelessWidget {
@@ -12,6 +13,7 @@ class CameraOverlay extends StatelessWidget {
     required this.trafficSignalCount,
     required this.sessionStart,
     required this.lastAlertMessage,
+    required this.activeLensDirection,
   });
 
   final bool isMonitoring;
@@ -23,6 +25,7 @@ class CameraOverlay extends StatelessWidget {
   final int trafficSignalCount;
   final DateTime? sessionStart;
   final String? lastAlertMessage;
+  final CameraLensDirection? activeLensDirection;
 
   @override
   Widget build(BuildContext context) {
@@ -84,36 +87,13 @@ class CameraOverlay extends StatelessWidget {
           Wrap(
             spacing: 12,
             children: [
-              _buildStatChip(
-                context,
-                label: 'Drowsiness',
-                value: drowsinessCount,
-                color: Colors.redAccent,
-              ),
-              _buildStatChip(
-                context,
-                label: 'Distraction',
-                value: distractionCount,
-                color: Colors.orangeAccent,
-              ),
-              _buildStatChip(
-                context,
-                label: 'Regulation',
-                value: regulationCount,
-                color: Colors.lightBlueAccent,
-              ),
-              _buildStatChip(
-                context,
-                label: 'Stop signs',
-                value: stopSignCount,
-                color: Colors.purpleAccent,
-              ),
-              _buildStatChip(
-                context,
-                label: 'Traffic lights',
-                value: trafficSignalCount,
-                color: Colors.tealAccent,
-              ),
+              for (final stat in _statsForLens(activeLensDirection))
+                _buildStatChip(
+                  context,
+                  label: stat.label,
+                  value: stat.value,
+                  color: stat.color,
+                ),
             ],
           ),
         ],
@@ -150,4 +130,56 @@ class CameraOverlay extends StatelessWidget {
     final seconds = time.second.toString().padLeft(2, '0');
     return '$hours:$minutes:$seconds';
   }
+
+  List<_ResolvedOverlayStat> _statsForLens(CameraLensDirection? lensDirection) {
+    if (lensDirection == CameraLensDirection.front) {
+      return [
+        _ResolvedOverlayStat(
+          label: 'Drowsiness',
+          value: drowsinessCount,
+          color: Colors.redAccent,
+        ),
+        _ResolvedOverlayStat(
+          label: 'Distraction',
+          value: distractionCount,
+          color: Colors.orangeAccent,
+        ),
+      ];
+    }
+
+    return [
+      _ResolvedOverlayStat(
+        label: 'Regulation',
+        value: regulationCount,
+        color: Colors.lightBlueAccent,
+      ),
+      _ResolvedOverlayStat(
+        label: 'Stop signs',
+        value: stopSignCount,
+        color: Colors.purpleAccent,
+      ),
+      _ResolvedOverlayStat(
+        label: 'Traffic lights',
+        value: trafficSignalCount,
+        color: Colors.tealAccent,
+      ),
+      _ResolvedOverlayStat(
+        label: 'Hazards',
+        value: distractionCount,
+        color: Colors.orangeAccent,
+      ),
+    ];
+  }
+}
+
+class _ResolvedOverlayStat {
+  const _ResolvedOverlayStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
 }
