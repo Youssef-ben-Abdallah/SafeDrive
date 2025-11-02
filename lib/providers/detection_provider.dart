@@ -12,6 +12,85 @@ import '../services/face_detection_service.dart';
 import '../services/notification_service.dart';
 import '../services/object_detection_service.dart';
 
+class _DetectionProfile {
+  const _DetectionProfile({
+    required this.scene,
+    required this.useFaceDetection,
+    required this.useObjectDetection,
+    required this.allowedTypes,
+    required this.allowedTagPatterns,
+    required this.startStatusMessage,
+    required this.idleStatusMessage,
+  });
+
+  final DetectionScene scene;
+  final bool useFaceDetection;
+  final bool useObjectDetection;
+  final Set<DetectionEventType> allowedTypes;
+  final List<Pattern> allowedTagPatterns;
+  final String startStatusMessage;
+  final String idleStatusMessage;
+
+  bool allowsEvent(DetectionEvent event) {
+    if (!allowedTypes.contains(event.type)) {
+      return false;
+    }
+
+    if (allowedTagPatterns.isEmpty) {
+      return true;
+    }
+
+    final tag = event.metadata?['tag'];
+    if (tag is! String) {
+      return false;
+    }
+
+    for (final pattern in allowedTagPatterns) {
+      if (pattern is RegExp && pattern.hasMatch(tag)) {
+        return true;
+      }
+      if (pattern is String && pattern == tag) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+}
+
+const _DetectionProfile _frontCameraProfile = _DetectionProfile(
+  scene: DetectionScene.driver,
+  useFaceDetection: true,
+  useObjectDetection: true,
+  allowedTypes: {
+    DetectionEventType.drowsiness,
+    DetectionEventType.distraction,
+  },
+  allowedTagPatterns: <Pattern>[
+    RegExp(r'^drowsiness_'),
+    RegExp(r'^phone_driver$'),
+  ],
+  startStatusMessage: 'Monitoring driver attentiveness…',
+  idleStatusMessage: 'Monitoring active — no signs of drowsiness.',
+);
+
+const _DetectionProfile _rearCameraProfile = _DetectionProfile(
+  scene: DetectionScene.road,
+  useFaceDetection: false,
+  useObjectDetection: true,
+  allowedTypes: {
+    DetectionEventType.regulation,
+    DetectionEventType.distraction,
+  },
+  allowedTagPatterns: <Pattern>[
+    RegExp(r'^stop_sign$'),
+    RegExp(r'^traffic_light_'),
+    RegExp(r'^road_hazard$'),
+  ],
+  startStatusMessage: 'Monitoring road environment for hazards…',
+  idleStatusMessage: 'Monitoring active — road environment clear.',
+);
+
 class DetectionProvider extends ChangeNotifier {
   DetectionProvider({
     FaceDetectionService? faceDetectionService,
@@ -41,6 +120,7 @@ class DetectionProvider extends ChangeNotifier {
   DateTime? _sessionStartTime;
   DateTime? _lastAlertTimestamp;
   CameraLensDirection? _activeLensDirection;
+  _DetectionProfile? _activeProfile;
 
   final List<DetectionEvent> _sessionEvents = [];
   final List<DetectionEvent> _alertLog = [];
@@ -56,11 +136,19 @@ class DetectionProvider extends ChangeNotifier {
   String get statusMessage => _statusMessage;
   String? get lastAlertMessage => _lastAlertMessage;
   DateTime? get sessionStartTime => _sessionStartTime;
+  CameraLensDirection? get activeLensDirection => _activeLensDirection;
   List<DetectionEvent> get events => List.unmodifiable(_sessionEvents);
   List<TripReport> get reports => List.unmodifiable(_reports);
   List<DetectionEvent> get alertLog => List.unmodifiable(_alertLog);
   DetectionEvent? get latestEvent =>
       _sessionEvents.isEmpty ? null : _sessionEvents.first;
+
+  _DetectionProfile _profileForLens(CameraLensDirection lensDirection) {
+    if (lensDirection == CameraLensDirection.front) {
+      return _frontCameraProfile;
+    }
+    return _rearCameraProfile;
+  }
 
   int get drowsinessCount => _sessionEvents
       .where((event) => event.type == DetectionEventType.drowsiness)
@@ -100,12 +188,21 @@ class DetectionProvider extends ChangeNotifier {
     _statusMessage = 'Preparing detection services…';
     notifyListeners();
 
+    final profile = _profileForLens(lensDirection);
+    _activeProfile = profile;
+
     await _notificationService.initialize();
-    if (lensDirection == CameraLensDirection.front) {
+
+    if (profile.useFaceDetection) {
       await _faceDetectionService.initialize();
+    } else {
+      await _faceDetectionService.dispose();
+    }
+
+    if (profile.useObjectDetection) {
       await _objectDetectionService.initialize();
     } else {
-      await _objectDetectionService.initialize();
+      await _objectDetectionService.dispose();
     }
 
     _soundAlertsEnabled = soundAlertsEnabled;
@@ -119,9 +216,7 @@ class DetectionProvider extends ChangeNotifier {
 
     _isInitializing = false;
     _isMonitoring = true;
-    _statusMessage = lensDirection == CameraLensDirection.front
-        ? 'Monitoring driver attentiveness…'
-        : 'Monitoring surroundings for hazards…';
+    _statusMessage = profile.startStatusMessage;
     notifyListeners();
   }
 
@@ -147,6 +242,7 @@ class DetectionProvider extends ChangeNotifier {
     _sessionEvents.clear();
     _sessionStartTime = null;
     _activeLensDirection = null;
+    _activeProfile = null;
     _statusMessage = 'Detection paused.';
     _lastAlertMessage = null;
     _lastAlertTimestamp = null;
@@ -178,21 +274,34 @@ class DetectionProvider extends ChangeNotifier {
     _isProcessingFrame = true;
 
     try {
-      final inputImage = _convertToInputImage(image, description);
+      final profile = _activeProfile;
+      if (profile == null) {
+        return;
+      }
 
-      DetectionEvent? event;
-      if (_activeLensDirection == CameraLensDirection.front) {
+      final inputImage = _convertToInputImage(image, description);
+      final List<DetectionEvent> allowedEvents = [];
+
+      if (profile.useFaceDetection) {
         final faceEvent = await _faceDetectionService.processImage(inputImage);
+        if (faceEvent != null && profile.allowsEvent(faceEvent)) {
+          allowedEvents.add(faceEvent);
+        }
+      }
+
+      if (profile.useObjectDetection) {
         final objectEvent = await _objectDetectionService.processImage(
           inputImage,
-          scene: DetectionScene.driver,
+          scene: profile.scene,
         );
-        event = _selectBestEvent(faceEvent, objectEvent);
-      } else {
-        event = await _objectDetectionService.processImage(
-          inputImage,
-          scene: DetectionScene.road,
-        );
+        if (objectEvent != null && profile.allowsEvent(objectEvent)) {
+          allowedEvents.add(objectEvent);
+        }
+      }
+
+      DetectionEvent? event;
+      for (final candidate in allowedEvents) {
+        event = _selectBestEvent(event, candidate);
       }
 
       if (event != null) {
@@ -225,6 +334,11 @@ class DetectionProvider extends ChangeNotifier {
   }
 
   void _registerEvent(DetectionEvent event) {
+    final profile = _activeProfile;
+    if (profile != null && !profile.allowsEvent(event)) {
+      return;
+    }
+
     _expireStalePendingEvents();
 
     if (_requiresStabilization(event)) {
@@ -256,11 +370,6 @@ class DetectionProvider extends ChangeNotifier {
 
   void _commitEvent(DetectionEvent event) {
     final now = event.timestamp;
-
-    if (_activeLensDirection == CameraLensDirection.front &&
-        event.type == DetectionEventType.regulation) {
-      return;
-    }
 
     if (_lastAlertTimestamp != null &&
         now.difference(_lastAlertTimestamp!) < _alertCooldown) {
@@ -311,9 +420,8 @@ class DetectionProvider extends ChangeNotifier {
       return;
     }
 
-    final idleMessage = _activeLensDirection == CameraLensDirection.front
-        ? 'Monitoring active — no signs of drowsiness.'
-        : 'Monitoring active — surroundings and regulations clear.';
+    final idleMessage =
+        _activeProfile?.idleStatusMessage ?? 'Monitoring active.';
 
     if (_statusMessage != idleMessage) {
       _statusMessage = idleMessage;

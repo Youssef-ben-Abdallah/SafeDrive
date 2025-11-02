@@ -334,6 +334,7 @@ class _LensDetectionScreenState extends State<LensDetectionScreen> {
                     trafficSignalCount: detection.trafficSignalCount,
                     sessionStart: detection.sessionStartTime,
                     lastAlertMessage: detection.lastAlertMessage,
+                    activeLensDirection: detection.activeLensDirection,
                   );
                 },
               ),
