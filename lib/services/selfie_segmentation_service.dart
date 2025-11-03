@@ -49,20 +49,9 @@ class SelfieSegmentationService {
       return null;
     }
 
-    final rawBuffer = mask.buffer;
+    final floats = _extractMaskValues(mask);
 
-    if (rawBuffer == null) {
-      return null;
-    }
-
-    late final Float32List floats;
-    if (rawBuffer is Float32List) {
-      floats = rawBuffer;
-    } else {
-      floats = rawBuffer.asFloat32List();
-    }
-
-    if (floats.isEmpty) {
+    if (floats == null || floats.isEmpty) {
       return null;
     }
 
@@ -85,4 +74,49 @@ class SelfieSegmentationService {
       timestamp: DateTime.now(),
     );
   }
+}
+
+Float32List? _extractMaskValues(SegmentationMask mask) {
+  final dynamic dynamicMask = mask;
+  final getters = [
+    () => dynamicMask.buffer,
+    () => dynamicMask.confidenceMask,
+    () => dynamicMask.mask,
+    () => dynamicMask.maskValues,
+    () => dynamicMask.data,
+  ];
+
+  for (final getter in getters) {
+    final result = _tryGetFloat32List(getter);
+    if (result != null) {
+      return result;
+    }
+  }
+
+  return null;
+}
+
+Float32List? _tryGetFloat32List(dynamic Function() getter) {
+  try {
+    final value = getter();
+    if (value == null) {
+      return null;
+    }
+
+    if (value is Float32List) {
+      return value;
+    }
+
+    if (value is ByteBuffer) {
+      return value.asFloat32List();
+    }
+
+    if (value is List<double>) {
+      return Float32List.fromList(value);
+    }
+  } catch (_) {
+    return null;
+  }
+
+  return null;
 }
