@@ -42,6 +42,37 @@ class SettingsScreen extends StatelessWidget {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () => _showLanguagePicker(context, settings),
           ),
+          const Divider(),
+          ListTile(
+            title: const Text('Emergency Contact'),
+            subtitle: Text(
+              settings.emergencyContactName != null
+                  ? '${settings.emergencyContactName}\n${settings.emergencyContactPhone}'
+                  : 'Add someone to contact automatically when danger is detected.',
+            ),
+            isThreeLine: settings.emergencyContactName != null,
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => _showEmergencyContactDialog(context, settings),
+          ),
+          if (settings.emergencyContactName != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () {
+                    settings.clearEmergencyContact();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Emergency contact removed.'),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Remove contact'),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -77,5 +108,76 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showEmergencyContactDialog(
+    BuildContext context,
+    SettingsProvider settings,
+  ) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final nameController =
+        TextEditingController(text: settings.emergencyContactName ?? '');
+    final phoneController =
+        TextEditingController(text: settings.emergencyContactPhone ?? '');
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Emergency Contact'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'Contact name',
+              ),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                hintText: '+1 555 0100',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              final phone = phoneController.text.trim();
+
+              if (name.isEmpty || phone.isEmpty) {
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Please provide both a name and phone number.'),
+                  ),
+                );
+                return;
+              }
+
+              settings.setEmergencyContact(name: name, phone: phone);
+              Navigator.pop(dialogContext);
+              scaffoldMessenger.showSnackBar(
+                const SnackBar(content: Text('Emergency contact saved.')),
+              );
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    nameController.dispose();
+    phoneController.dispose();
   }
 }
