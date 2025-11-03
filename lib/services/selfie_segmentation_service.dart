@@ -2,7 +2,6 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 class SegmentationAnalysis {
   SegmentationAnalysis({
@@ -17,8 +16,7 @@ class SegmentationAnalysis {
 }
 
 class SelfieSegmentationService {
-  SelfieSegmentationService()
-      : _segmenter = SelfieSegmenter(options: SelfieSegmenterOptions());
+  SelfieSegmentationService() : _segmenter = SelfieSegmenter();
 
   final SelfieSegmenter _segmenter;
   bool _isInitialized = false;
@@ -47,6 +45,10 @@ class SelfieSegmentationService {
     }
 
     final mask = await _segmenter.processImage(image);
+    if (mask == null) {
+      return null;
+    }
+
     final rawBuffer = mask.buffer;
 
     if (rawBuffer == null) {

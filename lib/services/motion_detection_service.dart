@@ -26,7 +26,7 @@ class MotionDetectionService {
     }
 
     _onEvent = onEvent;
-    _subscription = userAccelerometerEvents.listen(_handleEvent);
+    _subscription = userAccelerometerEventStream().listen(_handleEvent);
     _isListening = true;
   }
 
