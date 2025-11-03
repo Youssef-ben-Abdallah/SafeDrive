@@ -99,8 +99,10 @@ class EmergencyDispatchService {
     if (_locationPermissionGranted) {
       try {
         final position = await _geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.best,
-          timeLimit: const Duration(seconds: 5),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            timeLimit: Duration(seconds: 5),
+          ),
         );
         latitude = position.latitude;
         longitude = position.longitude;

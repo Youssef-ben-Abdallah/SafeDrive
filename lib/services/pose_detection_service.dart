@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../models/detection_event.dart';
 
