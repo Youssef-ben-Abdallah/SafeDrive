@@ -8,28 +8,30 @@ enum DetectionScene {
 }
 
 class ObjectDetectionService {
-  ObjectDetectionService()
-      : _objectDetector = ObjectDetector(
-          options: ObjectDetectorOptions(
-            mode: DetectionMode.stream,
-            classifyObjects: true,
-            multipleObjects: true,
-          ),
-        );
+  ObjectDetectionService();
 
-  final ObjectDetector _objectDetector;
+  static final ObjectDetectorOptions _options = ObjectDetectorOptions(
+    mode: DetectionMode.stream,
+    classifyObjects: true,
+    multipleObjects: true,
+  );
+
+  ObjectDetector? _objectDetector;
   bool _isInitialized = false;
   static const double _minConfidenceThreshold = 0.45;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+
+    _objectDetector = ObjectDetector(options: _options);
     _isInitialized = true;
   }
 
   Future<void> dispose() async {
     if (!_isInitialized) return;
 
-    await _objectDetector.close();
+    await _objectDetector?.close();
+    _objectDetector = null;
     _isInitialized = false;
   }
 
@@ -41,7 +43,12 @@ class ObjectDetectionService {
       return null;
     }
 
-    final objects = await _objectDetector.processImage(image);
+    final objectDetector = _objectDetector;
+    if (objectDetector == null) {
+      return null;
+    }
+
+    final objects = await objectDetector.processImage(image);
     if (objects.isEmpty) {
       return null;
     }

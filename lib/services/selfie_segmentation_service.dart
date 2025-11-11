@@ -16,9 +16,9 @@ class SegmentationAnalysis {
 }
 
 class SelfieSegmentationService {
-  SelfieSegmentationService() : _segmenter = SelfieSegmenter();
+  SelfieSegmentationService();
 
-  final SelfieSegmenter _segmenter;
+  SelfieSegmenter? _segmenter;
   bool _isInitialized = false;
 
   bool get isInitialized => _isInitialized;
@@ -27,6 +27,8 @@ class SelfieSegmentationService {
     if (_isInitialized) {
       return;
     }
+
+    _segmenter = SelfieSegmenter();
     _isInitialized = true;
   }
 
@@ -35,7 +37,8 @@ class SelfieSegmentationService {
       return;
     }
 
-    await _segmenter.close();
+    await _segmenter?.close();
+    _segmenter = null;
     _isInitialized = false;
   }
 
@@ -44,7 +47,12 @@ class SelfieSegmentationService {
       return null;
     }
 
-    final mask = await _segmenter.processImage(image);
+    final segmenter = _segmenter;
+    if (segmenter == null) {
+      return null;
+    }
+
+    final mask = await segmenter.processImage(image);
     if (mask == null) {
       return null;
     }

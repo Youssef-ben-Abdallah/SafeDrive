@@ -5,14 +5,13 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../models/detection_event.dart';
 
 class PoseDetectionService {
-  PoseDetectionService()
-      : _poseDetector = PoseDetector(
-          options: PoseDetectorOptions(
-            mode: PoseDetectionMode.stream,
-          ),
-        );
+  PoseDetectionService();
 
-  final PoseDetector _poseDetector;
+  static final PoseDetectorOptions _options = PoseDetectorOptions(
+    mode: PoseDetectionMode.stream,
+  );
+
+  PoseDetector? _poseDetector;
   bool _isInitialized = false;
 
   bool get isInitialized => _isInitialized;
@@ -21,6 +20,8 @@ class PoseDetectionService {
     if (_isInitialized) {
       return;
     }
+
+    _poseDetector = PoseDetector(options: _options);
     _isInitialized = true;
   }
 
@@ -29,7 +30,8 @@ class PoseDetectionService {
       return;
     }
 
-    await _poseDetector.close();
+    await _poseDetector?.close();
+    _poseDetector = null;
     _isInitialized = false;
   }
 
@@ -45,7 +47,12 @@ class PoseDetectionService {
       return null;
     }
 
-    final poses = await _poseDetector.processImage(image);
+    final poseDetector = _poseDetector;
+    if (poseDetector == null) {
+      return null;
+    }
+
+    final poses = await poseDetector.processImage(image);
     if (poses.isEmpty) {
       return null;
     }

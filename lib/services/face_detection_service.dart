@@ -5,28 +5,30 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../models/detection_event.dart';
 
 class FaceDetectionService {
-  FaceDetectionService()
-      : _faceDetector = FaceDetector(
-          options: FaceDetectorOptions(
-            enableClassification: true,
-            enableContours: true,
-            enableLandmarks: true,
-            performanceMode: FaceDetectorMode.accurate,
-          ),
-        );
+  FaceDetectionService();
 
-  final FaceDetector _faceDetector;
+  static final FaceDetectorOptions _options = FaceDetectorOptions(
+    enableClassification: true,
+    enableContours: true,
+    enableLandmarks: true,
+    performanceMode: FaceDetectorMode.accurate,
+  );
+
+  FaceDetector? _faceDetector;
   bool _isInitialized = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+
+    _faceDetector = FaceDetector(options: _options);
     _isInitialized = true;
   }
 
   Future<void> dispose() async {
     if (!_isInitialized) return;
 
-    await _faceDetector.close();
+    await _faceDetector?.close();
+    _faceDetector = null;
     _isInitialized = false;
   }
 
@@ -35,7 +37,12 @@ class FaceDetectionService {
       return null;
     }
 
-    final faces = await _faceDetector.processImage(image);
+    final faceDetector = _faceDetector;
+    if (faceDetector == null) {
+      return null;
+    }
+
+    final faces = await faceDetector.processImage(image);
     if (faces.isEmpty) {
       return null;
     }
